@@ -1,417 +1,185 @@
+---
+title: CHAINSTATE
+emoji: ⛓
+colorFrom: gray
+colorTo: black
+sdk: static
+app_file: index.html
+pinned: false
+short_description: Symbolic-weight blockchain · cognitive transactions · LM swarm consensus
+license: mit
+---
+
 # CHAINSTATE
-## Symbolic-Weight Blockchain with Integrated LM Swarm
 
-A revolutionary blockchain where transactions ARE cognitive operations, weights are universal symbols, and consensus emerges from distributed language model inference.
+> Symbolic-weight blockchain. Transactions ARE cognitive queries. Weights are universal symbols. Consensus emerges from reputation-weighted Bayesian log-pooling over a distributed language-model swarm.
 
----
+**Live**: [cpater-chainstate.static.hf.space](https://cpater-chainstate.static.hf.space) · **Chain**: Base mainnet 8453 · **GitHub**: [RedCiprianPater/chainstate](https://github.com/RedCiprianPater/chainstate)
 
-## Core Concept
+CHAINSTATE is a layer-6 service in the NWO Capital stack, composed with:
 
-**Traditional Blockchain:**
-- Miners waste energy on useless hashing
-- Transaction fees pay for security theater
-- Smart contracts are dumb state machines
+- **[NWO-ASM](https://cpater-nwo-asm.static.hf.space)** — Process-Matrix IR for substrate-agnostic dispatch (GPU, photonic, neuromorphic, IBM/Origin quantum)
+- **[NWO NEURO](https://cpater-nwo-neuro.static.hf.space)** — live Mental State Signature (MSS) conditioning of cognitive transactions
+- **[METASTATE](https://cpater-metastate.static.hf.space)** — substrate-of-substrates index, Φ-anchored discovery beacon
 
-**CHAINSTATE:**
-- **Work = Useful Inference** - Every transaction is a cognitive query resolved by the LM swarm
-- **Weights = Universal Symbols** - Model parameters encode math, physics, occult, emojis, all languages
-- **Consensus = Bayesian Agreement** - Nodes reach consensus through reputation-weighted log-pooling
-- **Fees = Compute Cost** - Users pay for actual useful computation, not cryptographic busywork
+The frontend in this repo is a single-file static HTML site (`index.html`). The chain edge is a single-file Cloudflare Worker (`workers/edge-worker.js`). Both ship via one GitHub Actions workflow.
 
 ---
 
-## Architecture Overview
+## What's inside
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     CHAINSTATE NETWORK                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Layer 1: Symbolic Weight Space                                 │
-│  ├── Universal Semiotic Embedding (USE)                        │
-│  │   ├── Mathematical symbols: ∫∂∇∆∑∏∈∉∪∩⊂⊃                    │
-│  │   ├── Physics: ℏℵℷℸℹ℺℻ℼℽℾℿ⅀⅁⅂⅃⅄ⅅⅆⅇⅈⅉ⅊⅋⅌⅍ⅎ⅏                │
-│  │   ├── Chemistry: ⚗⚘⚙⚚⚛⚜⚝⚞⚟⚠⚡⚢⚣⚤⚥⚦⚧⚨⚩⚪⚫⚬⚭⚮⚯            │
-│  │   ├── Biology: 🧬🧫🧪🦠🦡🦢🦣🦤🦥🦦🦧🦨🦩🦪🦫🦬🦭🦮🦯        │
-│  │   ├── All Emojis (Unicode 15.1)                             │
-│  │   ├── All Language Alphabets (3000+ scripts)                │
-│  │   └── Occult/Esoteric: ☉☽☿♀♁♂♃♄♅♆♇⚹⛢⛭⛯⛰⛱⛲⛳⛴⛵          │
-│  └── Symbolic Attention Mechanism (SAM)                        │
-│                                                                 │
-│  Layer 2: Swarm Consensus Protocol                              │
-│  ├── Edge Nodes (Cloudflare Workers)                           │
-│  ├── Inference Nodes (GPU/TPU clusters)                        │
-│  ├── Quantum Offload (IBM/Chinese QC)                          │
-│  └── Reputation-Weighted Consensus                             │
-│                                                                 │
-│  Layer 3: Transaction = Cognitive Query                         │
-│  ├── Query: "Solve P=NP" → Swarm inference                     │
-│  ├── Consensus: Bayesian agreement on answer                   │
-│  └── Settlement: Reputation update + token transfer            │
-│                                                                 │
-│  Layer 4: NWO-ASM Integration                                   │
-│  ├── Compile symbolic ops to quantum circuits                  │
-│  ├── Offload heavy inference to QC                             │
-│  └── Hybrid classical-quantum execution                        │
-└─────────────────────────────────────────────────────────────────┘
-```
+| File | What it does |
+|---|---|
+| `index.html` | The frontend. SPA with hero canvas, CHAINSTATE SCAN, terminal, symbolic register, 16 feature pages, architecture circle, instructions, roadmap, API mission control, R&D, deploy guide, affiliates. |
+| `workers/edge-worker.js` | Single-file Cloudflare Worker. Routes `/query`, `/beacon`, `/consensus`, `/status`, `/symbols`. KV-backed result cache (5 min), per-IP rate limit (60/min). |
+| `wrangler.toml` | Worker config. Three KV namespace bindings + env vars. |
+| `.github/workflows/deploy.yml` | One workflow: pushes Worker via `cloudflare/wrangler-action@v3` and the Space via `huggingface_hub`. |
+| `src/symbolic/embedding.py` | `UniversalSemioticEmbedding` + `SymbolicCrossAttention` + `SymbolicComposition` (PyTorch). |
+| `src/consensus/protocol.py` | `ReputationSystem` + `LogPoolingConsensus` + `CognitiveTransaction` + `SwarmNode`. |
+| `requirements.txt` | Python deps for swarm-node operators (torch, fastapi, qiskit, web3, redis, qdrant, transformers, etc.). |
+| `package.json` | `wrangler` dev dependency + deploy scripts. |
+| `SECRETS.md` | Step-by-step on how to fetch CF_API_TOKEN, CF_ACCOUNT_ID, HF_TOKEN. |
+
+The HF Space upload step ignores `workers/`, `wrangler.toml`, `package.json`, `src/`, `contracts/` — only the static frontend assets land on the Space.
 
 ---
 
-## Symbolic Weight Architecture
-
-### Universal Semiotic Embedding (USE)
-
-Instead of traditional token embeddings, CHAINSTATE uses a 65,536-dimensional symbolic space:
-
-```python
-# Symbolic weight structure
-class SymbolicWeight:
-    def __init__(self):
-        # Mathematical operators (4,096 dims)
-        self.math_space = SymbolicSubspace([
-            '∫', '∂', '∇', '∆', '∑', '∏', '∈', '∉', '∪', '∩',
-            '∀', '∃', '∄', '∅', '⊂', '⊃', '⊆', '⊇', '⊄', '⊅',
-            # ... all Unicode math symbols
-        ])
-        
-        # Scientific notation (8,192 dims)
-        self.science_space = SymbolicSubspace([
-            'ℏ', 'ℵ', 'ℷ', 'ℸ', 'ℹ', '℺', '℻', 'ℼ', 'ℽ', 'ℾ',
-            '⚗', '⚘', '⚙', '⚚', '⚛', '⚜', '⚝', '⚞', '⚟', '⚠',
-            '🧬', '🧫', '🧪', '🦠', '🔬', '🔭', '🔮',
-            # ... all scientific symbols
-        ])
-        
-        # Linguistic space (16,384 dims)
-        self.language_space = SymbolicSubspace([
-            # Latin
-            'a', 'b', 'c', ..., 'z', 'A', 'B', ..., 'Z',
-            # Greek
-            'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ',
-            # Cyrillic
-            'а', 'б', 'в', 'г', 'д', 'е', 'ё', 'ж', 'з', 'и',
-            # CJK
-            '一', '二', '三', '四', '五', '六', '七', '八', '九', '十',
-            # Arabic
-            'ا', 'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'د', 'ذ', 'ر',
-            # Hebrew
-            'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י',
-            # Sanskrit/Devanagari
-            'अ', 'आ', 'इ', 'ई', 'उ', 'ऊ', 'ऋ', 'ए', 'ऐ', 'ओ',
-            # ... all 3,000+ writing systems
-        ])
-        
-        # Occult/Esoteric (4,096 dims)
-        self.occult_space = SymbolicSubspace([
-            '☉', '☽', '☿', '♀', '♁', '♂', '♃', '♄', '♅', '♆', '♇',
-            '⚹', '⛢', '⛭', '⛯', '⛰', '⛱', '⛲', '⛳', '⛴', '⛵',
-            '☤', '☥', '☦', '☧', '☨', '☩', '☪', '☫', '☬', '☭',
-            # ... alchemical, astrological, magical symbols
-        ])
-        
-        # Emoji space (16,384 dims)
-        self.emoji_space = SymbolicSubspace([
-            '😀', '😁', '😂', '🤣', '😃', '😄', '😅', '😆', '😉', '😊',
-            # ... all 3,700+ emojis in Unicode 15.1
-        ])
-        
-        # Control/Structural (16,384 dims)
-        self.control_space = SymbolicSubspace([
-            '␀', '␁', '␂', '␃', '␄', '␅', '␆', '␇', '␈', '␉',
-            '⇒', '⇐', '⇑', '⇓', '⇔', '⇕', '⇖', '⇗', '⇘', '⇙',
-            # ... control flow, structural symbols
-        ])
-```
-
-### Symbolic Attention Mechanism (SAM)
-
-Traditional attention: `Attention(Q, K, V) = softmax(QK^T/√d)V`
-
-Symbolic attention operates on semantic relationships between symbols:
-
-```python
-class SymbolicAttention:
-    def forward(self, symbols):
-        # Each symbol activates related symbols across spaces
-        # e.g., '∫' (integral) activates:
-        #   - Math: '∂', '∇', '∆'
-        #   - Physics: 'ℏ', 'ℵ' (quantum operators)
-        #   - Emojis: '🔬', '🧮'
-        #   - Control: '⇒', '↺' (process flow)
-        
-        activation_map = self.cross_space_activation(symbols)
-        consensus = self.swarm_consensus(activation_map)
-        return consensus
-```
-
----
-
-## Consensus Protocol: Proof-of-Cognitive-Work
-
-### Reputation-Weighted Bayesian Consensus
-
-```python
-class CognitiveConsensus:
-    """
-    Nodes reach consensus through reputation-weighted log-pooling.
-    The swarm's output is the Bayesian posterior over all node beliefs.
-    """
-    
-    def consensus(self, node_outputs, reputations):
-        """
-        node_outputs: List of (node_id, symbolic_state, confidence)
-        reputations: Dict of node_id -> reputation_score
-        """
-        # Log-pooling: log P(consensus) = Σ w_i * log P(node_i)
-        weighted_logs = []
-        for node_id, state, conf in node_outputs:
-            w = reputations[node_id]
-            weighted_logs.append(w * torch.log(state + epsilon))
-        
-        # Consensus state
-        log_consensus = torch.stack(weighted_logs).sum(dim=0)
-        consensus_state = torch.exp(log_consensus - torch.logsumexp(log_consensus))
-        
-        return consensus_state
-    
-    def update_reputations(self, node_id, prediction, ground_truth):
-        """
-        Update node reputation based on accuracy.
-        Uses exponential moving average with α, β, γ parameters.
-        """
-        accuracy = self.evaluate_accuracy(prediction, ground_truth)
-        
-        # Reward/penalty function
-        if accuracy > threshold:
-            reputations[node_id] += α * accuracy
-        else:
-            reputations[node_id] -= β * (1 - accuracy)
-        
-        # Decay for inactive nodes
-        reputations[node_id] *= γ
-```
-
-### Transaction Flow
-
-```
-User Query
-    ↓
-[Edge Node - Cloudflare Worker]
-    ↓ (dispatches to swarm)
-[Inference Nodes - GPU/TPU/Quantum]
-    ↓ (each node produces symbolic state)
-Node A: State_A with confidence c_A
-Node B: State_B with confidence c_B
-Node C: State_C with confidence c_C
-    ↓
-[Consensus Layer]
-    ↓ (reputation-weighted log-pooling)
-Consensus State = Bayesian posterior
-    ↓
-[Settlement]
-    ↓
-- Query result returned to user
-- Reputation scores updated
-- $STATE tokens transferred
-- Transaction recorded on chain
-```
-
----
-
-## NWO-ASM Quantum Integration
-
-### Hybrid Classical-Quantum Execution
-
-```python
-class NWOASMQuantumBridge:
-    """
-    Offload specific symbolic operations to quantum computers.
-    """
-    
-    def compile_to_quantum(self, symbolic_op):
-        """
-        Compile symbolic weight operations to quantum circuits.
-        """
-        if symbolic_op.type == "OPTIMIZATION":
-            # Use quantum annealing for optimization
-            return self.to_ising_model(symbolic_op)
-        
-        elif symbolic_op.type == "SEARCH":
-            # Use Grover's algorithm for search
-            return self.to_grover_circuit(symbolic_op)
-        
-        elif symbolic_op.type == "SIMULATION":
-            # Use quantum simulation
-            return self.to_hamiltonian_sim(symbolic_op)
-        
-        else:
-            # Classical execution
-            return self.to_classical(symbolic_op)
-    
-    def offload_to_ibm(self, circuit):
-        """Execute on IBM quantum hardware"""
-        return ibm_runtime.run(circuit, backend='ibm_sherbrooke')
-    
-    def offload_to_chinese_qc(self, circuit):
-        """Execute on Chinese quantum hardware (e.g., Origin Quantum)"""
-        return chinese_qc_api.run(circuit, backend='wukong')
-```
-
-### Quantum Advantage Use Cases
-
-1. **Symbolic Path Integrals**: Quantum simulation of semantic state evolution
-2. **Optimization of λ (synergy parameter)**: Quantum annealing for swarm coordination
-3. **High-dimensional Consensus**: Quantum amplitude estimation for reputation weighting
-4. **Cryptographic Primitives**: Quantum-resistant signatures for chain security
-
----
-
-## Token Economics: $STATE on CHAINSTATE
-
-### Transaction Cost Model
-
-```python
-def calculate_tx_cost(query_complexity, swarm_size, consensus_depth):
-    """
-    Cost = Base + (Complexity × Compute) + (Swarm Size × Coordination) + (Depth × Verification)
-    """
-    base_cost = 0.001  # $STATE
-    
-    # Complexity: measured in symbolic operations
-    compute_cost = query_complexity * 0.0001
-    
-    # Swarm coordination overhead
-    coordination_cost = swarm_size * 0.00001
-    
-    # Consensus depth: how many rounds of agreement
-    verification_cost = consensus_depth * 0.00005
-    
-    return base_cost + compute_cost + coordination_cost + verification_cost
-```
-
-### Staking and Reputation
-
-- **Stake $STATE** to run an inference node
-- **Reputation** determines weight in consensus
-- **Slashing** for incorrect predictions or downtime
-- **Rewards** for accurate, timely inference
-
----
-
-## Implementation Roadmap
-
-### Phase 1: Foundation (Months 1-3)
-- [ ] Implement Universal Semiotic Embedding (USE)
-- [ ] Deploy edge nodes on Cloudflare Workers
-- [ ] Create basic symbolic attention mechanism
-- [ ] Launch testnet with 100 nodes
-
-### Phase 2: Swarm Activation (Months 4-6)
-- [ ] Implement reputation-weighted consensus
-- [ ] Integrate GPU inference clusters
-- [ ] Deploy Hugging Face Space UI
-- [ ] Launch mainnet with 1,000 nodes
-
-### Phase 3: Quantum Integration (Months 7-9)
-- [ ] NWO-ASM quantum compiler
-- [ ] IBM quantum hardware integration
-- [ ] Chinese QC integration
-- [ ] Hybrid execution optimization
-
-### Phase 4: Ecosystem (Months 10-12)
-- [ ] Developer SDK
-- [ ] DApp marketplace
-- [ ] Cross-chain bridges
-- [ ] DAO governance
-
----
-
-## File Structure
-
-```
-chainstate/
-├── README.md                    # This file
-├── chainstate.html              # Black & white HF Space UI
-├── src/
-│   ├── symbolic/
-│   │   ├── embedding.py         # Universal Semiotic Embedding
-│   │   ├── attention.py         # Symbolic Attention Mechanism
-│   │   └── vocabulary.py        # Symbol definitions
-│   ├── consensus/
-│   │   ├── protocol.py          # Proof-of-Cognitive-Work
-│   │   ├── reputation.py        # Reputation system
-│   │   └── pooling.py           # Log-pooling consensus
-│   ├── chain/
-│   │   ├── transaction.py       # Transaction = Query
-│   │   ├── block.py             # Block = Consensus batch
-│   │   └── state.py             # Global state management
-│   ├── quantum/
-│   │   ├── compiler.py          # NWO-ASM to quantum circuits
-│   │   ├── ibm_bridge.py        # IBM QC integration
-│   │   └── chinese_bridge.py    # Chinese QC integration
-│   └── edge/
-│       ├── worker.py            # Cloudflare Worker handler
-│       ├── dispatch.py          # Query dispatcher
-│       └── beacon.py            # Swarm beacon protocol
-├── contracts/
-│   ├── StateToken.sol           # $STATE ERC-20/BEP-20
-│   ├── ReputationRegistry.sol   # On-chain reputation
-│   └── ConsensusVerifier.sol    # Consensus validation
-├── workers/
-│   ├── edge-worker.js           # Cloudflare Worker script
-│   └── durable-object.js        # Durable Object for consensus
-└── docs/
-    ├── whitepaper.md            # Full technical specification
-    └── api.md                   # API documentation
-```
-
----
-
-## Quick Start
+## Quickstart
 
 ```bash
-# Clone repository
-git clone https://github.com/CPater/chainstate.git
+# 1. Clone
+git clone https://github.com/RedCiprianPater/chainstate.git
 cd chainstate
 
-# Install dependencies
-pip install -r requirements.txt
-npm install
+# 2. Add the three secrets to GitHub
+#    Settings → Secrets and variables → Actions → New repository secret
+#      CF_API_TOKEN     (from https://dash.cloudflare.com/profile/api-tokens)
+#      CF_ACCOUNT_ID    (from CF dashboard right sidebar)
+#      HF_TOKEN         (from https://huggingface.co/settings/tokens, write scope)
+#    Full step-by-step in SECRETS.md
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys
+# 3. Create CF KV namespaces (one time)
+npx wrangler kv:namespace create CHAINSTATE_NODES
+npx wrangler kv:namespace create CHAINSTATE_CACHE
+npx wrangler kv:namespace create CHAINSTATE_CONSENSUS
+# paste the printed IDs into wrangler.toml
 
-# Run local testnet
-python src/chain/local_node.py --nodes=10
-
-# Deploy edge worker
-wrangler deploy workers/edge-worker.js
-
-# Launch HF Space UI
-python -m http.server 7860
-# Open http://localhost:7860/chainstate.html
+# 4. First push deploys everything
+git add . && git commit -m "first deploy" && git push origin main
 ```
+
+After the workflow finishes:
+
+- **Worker URL** appears in the Actions log (`https://chainstate-worker.<your-cf-subdomain>.workers.dev`)
+- **HF Space** updates at `https://huggingface.co/spaces/CPater/chainstate`
+
+Verify both:
+
+```bash
+curl https://chainstate-worker.<your-cf>.workers.dev/status
+
+curl -X POST https://chainstate-worker.<your-cf>.workers.dev/query \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "∫∂x → ?", "swarmSize": 20, "consensusDepth": 3}'
+```
+
+Then on the deployed Space, open browser DevTools console and run:
+
+```js
+window.__CHAINSTATE_WORKER = "https://chainstate-worker.<your-cf>.workers.dev"
+```
+
+The Query, Terminal, and SCAN pages will now hit the live Worker. Refresh-persistent variant: bake the URL into the Space by adding `<script>window.__CHAINSTATE_WORKER="…"</script>` near the top of `index.html`.
+
+---
+
+## Architecture · 10 layers
+
+```
+L0  WALLET           ← EVM wallet on Base mainnet 8453
+L1  EDGE WORKER      ← single-file Cloudflare Worker
+L2  USE              ← Universal Semiotic Embedding (65,536d × 6 subspaces)
+L3  SAM              ← Symbolic Attention Mechanism (64 heads × 1,024d)
+L4  SWARM            ← geo-distributed inference nodes (reputation-weighted)
+L5  CONSENSUS        ← Bayesian log-pooling, 0.95 cosine threshold
+L6  BLOCK PRODUCTION ← VRF proposer, 2s blocks, 64 tx/block
+L7  SCAN             ← block explorer
+L8  NWO-ASM          ← Process-Matrix IR for substrate dispatch
+L9  NWO NEURO        ← live MSS conditioning of queries
+
+Everything wrapped by: CRYSTALS-Dilithium + Kyber-1024 + SHA3-256
+```
+
+---
+
+## Six subspaces · 65,536 dimensions
+
+| subspace | glyph | dims  | range            | role                                                |
+|----------|-------|-------|------------------|-----------------------------------------------------|
+| Math     | ∫     | 4,096 | 0 – 4,095        | operators, set theory, logic                        |
+| Science  | ⚛     | 8,192 | 4,096 – 12,287   | letterlike, units, chemistry, biology, physics, astro |
+| Language | 文    | 16,384| 12,288 – 28,671  | Greek, Cyrillic, CJK, Arabic, Hebrew, Devanagari, Korean |
+| Occult   | ☉     | 4,096 | 28,672 – 32,767  | astrological, alchemical, religious, esoteric        |
+| Emoji    | 🧠    | 16,384| 32,768 – 49,151  | full Unicode 15.1 emoji set                          |
+| Control  | ⇒     | 16,384| 49,152 – 65,535  | arrows, APL, flow-control                            |
+
+Cross-subspace interaction mask:
+
+```
+                math  sci  lang  occ  emo  ctrl
+math             1.0  1.0  0.5  0.1  0.1  0.5
+science          1.0  1.0  0.5  0.1  0.1  0.3
+language         0.5  0.5  0.7  0.5  0.4  0.5
+occult           0.1  0.1  0.5  0.8  0.2  1.0
+emoji            0.1  0.1  0.4  0.2  0.3  0.1
+control          0.5  0.3  0.5  1.0  0.1  0.9
+```
+
+Math↔Science is locked. Occult↔Control is locked. Language is the universal solvent.
+
+---
+
+## Consensus · reputation-weighted Bayesian log-pooling
+
+```python
+# per round:
+log_p     = torch.log_softmax(states, dim=-1)     # [k, 65536]
+w         = reputations / reputations.sum()       # [k]
+log_c     = (log_p * w.view(-1, 1)).sum(0)        # [65536]
+consensus = (log_c - logsumexp(log_c)).exp()      # normalised
+# filter to nodes with cos(state, consensus) > 0.7; repeat until cos > 0.95
+```
+
+Convergence in 3–7 rounds. Hard min 10 nodes. λ synergy parameter optimised offline via NWO-ASM quantum-annealing bridge.
+
+---
+
+## Pricing · USDC on Base
+
+| endpoint                              | price                |
+|---------------------------------------|----------------------|
+| `/v1/query` (20 nodes, 3 rounds)      | $0.00190             |
+| `/v1/query` cache hit                  | $0.00012             |
+| `/v1/asm-compile`                     | $0.00040             |
+| `/v1/asm-dispatch` (GPU, /sec)        | $0.00250             |
+| `/v1/asm-dispatch` (quantum, /shot)   | $0.04000             |
+| `/v1/neuro-bind` (MSS query)          | $0.00220             |
+| `/v1/stake`                           | $0.00010 + gas       |
+| `/v1/mint` (ERC-1155 listing)         | $0.00500             |
+| `/beacon`, `/status`, `/symbols`      | free                 |
+
+Splitter on every paid call: 35% founder · 35% agent · 15% ops · 15% referrer (when ref set on wallet). Contract: `0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4` on Base.
+
+---
+
+## R&D · papers
+
+- **CHAINSTATE Whitepaper** (in writing) — placeholder. Mirror URL: `https://huggingface.co/spaces/CPater/chainstate/resolve/main/whitepaper.pdf`
+- **Supporting paper**: *Distributed Cognitive Work in Edge-Resident Language-Model Networks* — 14-page A4 preprint, 22 equations, 5 figures. Live at [ResearchGate publication 406896310](https://www.researchgate.net/publication/406896310_Distributed_Cognitive_Work_in_Edge-Resident_Language-Model_Networks) and mirrored on the Space at `whitepaper.pdf` ← *that's the placeholder*; the supporting paper is at `NWOWorkfield.pdf`.
+- **Audio companion**: `podcast.m4a` on the Space (drop the file in; the player wires up automatically).
 
 ---
 
 ## License
 
-MIT License - See LICENSE file
-
----
-
-## Citation
-
-```bibtex
-@article{pater2026chainstate,
-  title={CHAINSTATE: Symbolic-Weight Blockchain with Integrated LM Swarm},
-  author={Pater, Ciprian},
-  year={2026},
-  url={https://github.com/CPater/chainstate}
-}
-```
-
----
-
-**Built with ❤️ and 🔮 by the NWO Research Collective**
+MIT.

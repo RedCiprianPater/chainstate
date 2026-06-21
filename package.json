@@ -1,23 +1,24 @@
 {
   "name": "chainstate-worker",
   "version": "0.1.0",
-  "description": "CHAINSTATE Edge Worker - Symbolic-Weight Blockchain",
+  "private": true,
+  "description": "CHAINSTATE — symbolic-weight blockchain edge worker (Cloudflare)",
   "main": "workers/edge-worker.js",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "dev":       "wrangler dev",
+    "deploy":    "wrangler deploy",
+    "tail":      "wrangler tail",
+    "kv:create": "wrangler kv:namespace create CHAINSTATE_NODES && wrangler kv:namespace create CHAINSTATE_CACHE && wrangler kv:namespace create CHAINSTATE_CONSENSUS"
   },
-  "keywords": [
-    "blockchain",
-    "ai",
-    "swarm",
-    "consensus",
-    "symbolic"
-  ],
-  "author": "NWO Research Collective",
-  "license": "MIT",
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^3.78.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RedCiprianPater/chainstate.git"
   }
 }

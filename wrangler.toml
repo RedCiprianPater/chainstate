@@ -1,32 +1,38 @@
-name = "chainstate"
+name = "chainstate-worker"
 main = "workers/edge-worker.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-09-23"
 
-# KV Namespaces
-[[kv_namespaces]]
-binding = "CHAINSTATE_CACHE"
-id = "your_cache_namespace_id"
+# -----------------------------------------------------------------
+# Required KV namespaces — create them once and paste the IDs here:
+#
+#   npx wrangler kv:namespace create CHAINSTATE_NODES
+#   npx wrangler kv:namespace create CHAINSTATE_CACHE
+#   npx wrangler kv:namespace create CHAINSTATE_CONSENSUS
+#
+# Each call prints something like:
+#   { binding = "CHAINSTATE_NODES", id = "1a2b3c4d5e6f…" }
+# Copy the printed `id` into the matching block below.
+# -----------------------------------------------------------------
 
 [[kv_namespaces]]
 binding = "CHAINSTATE_NODES"
-id = "your_nodes_namespace_id"
+id      = "REPLACE_ME_AFTER_kv_namespace_create_CHAINSTATE_NODES"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CACHE"
+id      = "REPLACE_ME_AFTER_kv_namespace_create_CHAINSTATE_CACHE"
 
 [[kv_namespaces]]
 binding = "CHAINSTATE_CONSENSUS"
-id = "your_consensus_namespace_id"
+id      = "REPLACE_ME_AFTER_kv_namespace_create_CHAINSTATE_CONSENSUS"
 
-# Durable Objects
-[[durable_objects.bindings]]
-name = "CONSENSUS_COORDINATOR"
-class_name = "ConsensusCoordinator"
-
-# Environment variables
 [vars]
-ENVIRONMENT = "production"
-SWARM_SIZE = "50"
-CONSENSUS_DEPTH = "3"
+SWARM_SIZE         = "50"
+CONSENSUS_DEPTH    = "3"
+CACHE_TTL          = "300"     # seconds; 5 minutes
+RATE_LIMIT         = "60"      # per IP per minute
 
-# Secrets (set via wrangler secret put)
-# - IBM_QUANTUM_TOKEN
-# - CHINESE_QC_TOKEN
-# - ADMIN_API_KEY
+# Optional — uncomment to bind a custom route on a CF zone you own:
+# routes = [
+#   { pattern = "chainstate.example.com/*", zone_name = "example.com" },
+# ]
