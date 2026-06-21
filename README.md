@@ -1,18 +1,16 @@
 ---
 title: CHAINSTATE
 emoji: ⛓
-colorFrom: gray
-colorTo: black
+colorFrom: green
+colorTo: gray
 sdk: static
 app_file: index.html
 pinned: false
-short_description: Symbolic-weight blockchain · cognitive transactions · LM swarm consensus
-license: mit
 ---
 
 # CHAINSTATE
 
-> Symbolic-weight blockchain. Transactions ARE cognitive queries. Weights are universal symbols. Consensus emerges from reputation-weighted Bayesian log-pooling over a distributed language-model swarm.
+**Symbolic-weight blockchain.** Transactions ARE cognitive queries. Weights are universal symbols. Consensus emerges from reputation-weighted Bayesian log-pooling over a distributed language-model swarm.
 
 **Live**: [cpater-chainstate.static.hf.space](https://cpater-chainstate.static.hf.space) · **Chain**: Base mainnet 8453 · **GitHub**: [RedCiprianPater/chainstate](https://github.com/RedCiprianPater/chainstate)
 
@@ -38,7 +36,8 @@ The frontend in this repo is a single-file static HTML site (`index.html`). The 
 | `src/consensus/protocol.py` | `ReputationSystem` + `LogPoolingConsensus` + `CognitiveTransaction` + `SwarmNode`. |
 | `requirements.txt` | Python deps for swarm-node operators (torch, fastapi, qiskit, web3, redis, qdrant, transformers, etc.). |
 | `package.json` | `wrangler` dev dependency + deploy scripts. |
-| `SECRETS.md` | Step-by-step on how to fetch CF_API_TOKEN, CF_ACCOUNT_ID, HF_TOKEN. |
+| `SECRETS.md` | Step-by-step on how to fetch `CF_API_TOKEN`, `CF_ACCOUNT_ID`, `HF_TOKEN`. |
+| `agent.md` | Operational manual for AI agents and assistants embedded on the Space. |
 
 The HF Space upload step ignores `workers/`, `wrangler.toml`, `package.json`, `src/`, `contracts/` — only the static frontend assets land on the Space.
 
@@ -55,7 +54,7 @@ cd chainstate
 #    Settings → Secrets and variables → Actions → New repository secret
 #      CF_API_TOKEN     (from https://dash.cloudflare.com/profile/api-tokens)
 #      CF_ACCOUNT_ID    (from CF dashboard right sidebar)
-#      HF_TOKEN         (from https://huggingface.co/settings/tokens, write scope)
+#      HF_TOKEN         (from https://huggingface.co/settings/tokens, fine-grained, scoped to CPater/chainstate Space)
 #    Full step-by-step in SECRETS.md
 
 # 3. Create CF KV namespaces (one time)
@@ -89,7 +88,7 @@ Then on the deployed Space, open browser DevTools console and run:
 window.__CHAINSTATE_WORKER = "https://chainstate-worker.<your-cf>.workers.dev"
 ```
 
-The Query, Terminal, and SCAN pages will now hit the live Worker. Refresh-persistent variant: bake the URL into the Space by adding `<script>window.__CHAINSTATE_WORKER="…"</script>` near the top of `index.html`.
+The Query, Terminal, and SCAN pages will now hit the live Worker. **Refresh-persistent variant**: bake the URL into the Space by adding `<script>window.__CHAINSTATE_WORKER="…"</script>` near the top of `index.html` (already done in this repo for `chainstate-worker.ciprianpater.workers.dev`).
 
 ---
 
@@ -114,14 +113,14 @@ Everything wrapped by: CRYSTALS-Dilithium + Kyber-1024 + SHA3-256
 
 ## Six subspaces · 65,536 dimensions
 
-| subspace | glyph | dims  | range            | role                                                |
-|----------|-------|-------|------------------|-----------------------------------------------------|
-| Math     | ∫     | 4,096 | 0 – 4,095        | operators, set theory, logic                        |
+| subspace | glyph | dims  | range            | role                                                  |
+|----------|-------|------:|------------------|-------------------------------------------------------|
+| Math     | ∫     | 4,096 | 0 – 4,095        | operators, set theory, logic                          |
 | Science  | ⚛     | 8,192 | 4,096 – 12,287   | letterlike, units, chemistry, biology, physics, astro |
 | Language | 文    | 16,384| 12,288 – 28,671  | Greek, Cyrillic, CJK, Arabic, Hebrew, Devanagari, Korean |
-| Occult   | ☉     | 4,096 | 28,672 – 32,767  | astrological, alchemical, religious, esoteric        |
-| Emoji    | 🧠    | 16,384| 32,768 – 49,151  | full Unicode 15.1 emoji set                          |
-| Control  | ⇒     | 16,384| 49,152 – 65,535  | arrows, APL, flow-control                            |
+| Occult   | ☉     | 4,096 | 28,672 – 32,767  | astrological, alchemical, religious, esoteric         |
+| Emoji    | 🧠    | 16,384| 32,768 – 49,151  | full Unicode 15.1 emoji set                           |
+| Control  | ⇒     | 16,384| 49,152 – 65,535  | arrows, APL, flow-control                             |
 
 Cross-subspace interaction mask:
 
@@ -168,14 +167,14 @@ Convergence in 3–7 rounds. Hard min 10 nodes. λ synergy parameter optimised o
 | `/v1/mint` (ERC-1155 listing)         | $0.00500             |
 | `/beacon`, `/status`, `/symbols`      | free                 |
 
-Splitter on every paid call: 35% founder · 35% agent · 15% ops · 15% referrer (when ref set on wallet). Contract: `0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4` on Base.
+Splitter on every paid call: **35% founder · 35% agent · 15% ops · 15% referrer** (when ref is set on wallet). Contract: `0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4` on Base.
 
 ---
 
 ## R&D · papers
 
 - **CHAINSTATE Whitepaper** (in writing) — placeholder. Mirror URL: `https://huggingface.co/spaces/CPater/chainstate/resolve/main/whitepaper.pdf`
-- **Supporting paper**: *Distributed Cognitive Work in Edge-Resident Language-Model Networks* — 14-page A4 preprint, 22 equations, 5 figures. Live at [ResearchGate publication 406896310](https://www.researchgate.net/publication/406896310_Distributed_Cognitive_Work_in_Edge-Resident_Language-Model_Networks) and mirrored on the Space at `whitepaper.pdf` ← *that's the placeholder*; the supporting paper is at `NWOWorkfield.pdf`.
+- **Supporting paper**: *Distributed Cognitive Work in Edge-Resident Language-Model Networks* — 14-page A4 preprint, 22 equations, 5 figures. Live at [ResearchGate publication 406896310](https://www.researchgate.net/publication/406896310_Distributed_Cognitive_Work_in_Edge-Resident_Language-Model_Networks) and mirrored on the Space at `NWOWorkfield.pdf`.
 - **Audio companion**: `podcast.m4a` on the Space (drop the file in; the player wires up automatically).
 
 ---
