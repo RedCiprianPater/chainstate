@@ -1,336 +1,278 @@
 """
-CHAINSTATE: Symbolic-Weight Blockchain Core
-Universal Semiotic Embedding (USE) implementation
+chainstate.symbolic.embedding
+=============================
+Universal Semiotic Embedding (USE)
+Symbolic Cross-Attention (SAM)
+Symbolic Composition
+
+A 65,536-dimensional embedding space across 6 subspaces:
+
+    math     · 4,096 dims  · range [0, 4,096)
+    science  · 8,192 dims  · range [4,096, 12,288)
+    language · 16,384 dims · range [12,288, 28,672)
+    occult   · 4,096 dims  · range [28,672, 32,768)
+    emoji    · 16,384 dims · range [32,768, 49,152)
+    control  · 16,384 dims · range [49,152, 65,536)
+
+Reference implementation. Real swarm nodes load a quantised shard of this
+table per subspace; the full 65,536 × head_dim matrix is materialised at
+the consensus layer for log-pooling.
 """
+from __future__ import annotations
+
+import math
+import unicodedata
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-import numpy as np
-from typing import List, Dict, Tuple, Optional
-import unicodedata
+import torch.nn.functional as F
 
+
+# ── subspace specification ─────────────────────────────────────────
+SUBSPACES = {
+    "math":     {"dims": 4_096,  "offset": 0,       "ranges": [(0x2200, 0x22FF), (0x27C0, 0x27EF), (0x2980, 0x29FF)]},
+    "science":  {"dims": 8_192,  "offset": 4_096,   "ranges": [(0x2100, 0x214F), (0x1F52A, 0x1F570), (0x26E0, 0x27BF)]},
+    "language": {"dims": 16_384, "offset": 12_288,  "ranges": [(0x0041, 0x024F), (0x0370, 0x03FF), (0x0400, 0x04FF),
+                                                                (0x0530, 0x058F), (0x0590, 0x05FF), (0x0600, 0x06FF),
+                                                                (0x0900, 0x097F), (0x4E00, 0x9FFF), (0xAC00, 0xD7AF)]},
+    "occult":   {"dims": 4_096,  "offset": 28_672,  "ranges": [(0x2600, 0x26FF), (0x2638, 0x267F), (0x1F700, 0x1F77F)]},
+    "emoji":    {"dims": 16_384, "offset": 32_768,  "ranges": [(0x1F600, 0x1F64F), (0x1F300, 0x1F5FF), (0x1F680, 0x1F6FF),
+                                                                (0x1F900, 0x1F9FF), (0x1FA70, 0x1FAFF)]},
+    "control":  {"dims": 16_384, "offset": 49_152,  "ranges": [(0x2190, 0x21FF), (0x27F0, 0x297F), (0x2B00, 0x2BFF),
+                                                                (0x2400, 0x24FF), (0x2300, 0x23FF)]},
+}
+
+TOTAL_DIM = sum(s["dims"] for s in SUBSPACES.values())
+assert TOTAL_DIM == 65_536, f"expected 65,536 dims, got {TOTAL_DIM}"
+
+NUM_HEADS = 64
+HEAD_DIM  = TOTAL_DIM // NUM_HEADS   # 1,024
+
+
+# ── codepoint → symbol_id ──────────────────────────────────────────
+def codepoint_to_subspace(cp: int) -> str | None:
+    """Return the subspace key for a codepoint, or None if out of range."""
+    # Quick lookup against declared ranges; fall through to language for any
+    # alphabetic codepoint we didn't explicitly enumerate (Unicode is huge).
+    for sub, spec in SUBSPACES.items():
+        for lo, hi in spec["ranges"]:
+            if lo <= cp <= hi:
+                return sub
+    # Fallback for general alphabetic / letterlike content
+    try:
+        if unicodedata.category(chr(cp)).startswith("L"):
+            return "language"
+    except ValueError:
+        pass
+    return None
+
+
+def char_to_symbol_id(ch: str) -> int | None:
+    cp = ord(ch)
+    sub = codepoint_to_subspace(cp)
+    if sub is None:
+        return None
+    spec = SUBSPACES[sub]
+    # Map the codepoint to a local index inside the subspace deterministically.
+    # In production this uses a frozen vocab table; here we hash for determinism.
+    local = cp % spec["dims"]
+    return spec["offset"] + local
+
+
+def query_to_symbol_ids(query: str) -> list[int]:
+    """Tokenise a query string to its sequence of symbol IDs."""
+    return [sid for ch in query if (sid := char_to_symbol_id(ch)) is not None]
+
+
+# ── modules ────────────────────────────────────────────────────────
 class UniversalSemioticEmbedding(nn.Module):
     """
-    65,536-dimensional symbolic embedding space.
-    Encodes math, science, languages, occult symbols, emojis.
+    The 65,536-d embedding. Per-subspace `nn.Embedding` tables sum to
+    `TOTAL_DIM`. `embed_query` returns a single 65,536-d tensor by
+    averaging the per-symbol head vectors across positions.
     """
-    
-    def __init__(self, dim: int = 65536, num_heads: int = 64):
+    def __init__(self):
         super().__init__()
-        self.dim = dim
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        
-        # Symbolic subspaces
-        self.subspaces = {
-            'math': (0, 4096),           # Mathematical operators
-            'science': (4096, 12288),    # Physics, chemistry, biology
-            'language': (12288, 28672),  # All human languages
-            'occult': (28672, 32768),    # Esoteric symbols
-            'emoji': (32768, 49152),     # Unicode emojis
-            'control': (49152, 65536),   # Control flow symbols
-        }
-        
-        # Symbol vocabulary
-        self.symbol_vocab = self._build_symbol_vocab()
-        self.symbol_to_idx = {s: i for i, s in enumerate(self.symbol_vocab)}
-        
-        # Embedding layers for each subspace
-        self.embeddings = nn.ModuleDict({
-            name: nn.Embedding(size, self.head_dim)
-            for name, (start, end) in self.subspaces.items()
-            for size in [end - start]
-        })
-        
-        # Cross-subspace attention
-        self.cross_attention = SymbolicCrossAttention(dim, num_heads)
-        
-        # Symbolic composition
-        self.composition = SymbolicComposition(dim)
-        
-    def _build_symbol_vocab(self) -> List[str]:
-        """Build comprehensive symbol vocabulary."""
-        symbols = []
-        
-        # Mathematical operators (Unicode 2200-22FF)
-        for code in range(0x2200, 0x2300):
-            try:
-                char = chr(code)
-                if unicodedata.category(char).startswith('Sm'):
-                    symbols.append(char)
-            except:
-                pass
-        
-        # Letterlike symbols (Unicode 2100-214F)
-        for code in range(0x2100, 0x2150):
-            try:
-                symbols.append(chr(code))
-            except:
-                pass
-        
-        # Greek letters
-        for code in range(0x0391, 0x03A2):
-            symbols.append(chr(code))
-        for code in range(0x03B1, 0x03CA):
-            symbols.append(chr(code))
-        
-        # Cyrillic
-        for code in range(0x0400, 0x0500):
-            symbols.append(chr(code))
-        
-        # CJK Unified Ideographs (sample)
-        for code in range(0x4E00, 0x4E50):  # Sample of 50
-            symbols.append(chr(code))
-        
-        # Arabic
-        for code in range(0x0600, 0x0700):
-            symbols.append(chr(code))
-        
-        # Hebrew
-        for code in range(0x0590, 0x05FF):
-            symbols.append(chr(code))
-        
-        # Devanagari
-        for code in range(0x0900, 0x097F):
-            symbols.append(chr(code))
-        
-        # Alchemical symbols (Unicode 1F700-1F77F)
-        for code in range(0x1F700, 0x1F780):
-            try:
-                symbols.append(chr(code))
-            except:
-                pass
-        
-        # Astrological symbols
-        astrological = ['☉', '☽', '☿', '♀', '♁', '♂', '♃', '♄', '♅', '♆', '♇', '⚹', '⛢']
-        symbols.extend(astrological)
-        
-        # Religious/occult symbols
-        religious = ['☤', '☥', '☦', '☧', '☨', '☩', '☪', '☫', '☬', '☭', '☮', '☯']
-        symbols.extend(religious)
-        
-        # Emojis (sample of key ones)
-        emojis = ['🧠', '⚡', '🔮', '🌐', '⛓', '🔒', '🔓', '💎', '⚙', '🎯', 
-                  '🌟', '🔥', '💧', '🌍', '🚀', '✨', '🧬', '🔬', '⚗', '⚛',
-                  '☢', '☣', '♨', '🔭', '🧪', '🧫', '🦠', '🔋', '💡', '🎲']
-        symbols.extend(emojis)
-        
-        # Control/structural symbols
-        controls = ['⇒', '⇐', '⇑', '⇓', '⇔', '⇕', '⇖', '⇗', '⇘', '⇙',
-                    '↺', '↻', '⟳', '⟲', '⇄', '⇆', '⇋', '⇌']
-        symbols.extend(controls)
-        
-        # ASCII characters
-        for code in range(32, 127):
-            symbols.append(chr(code))
-        
-        # Pad to 65536 with special tokens
-        while len(symbols) < 65536:
-            symbols.append(f'<SPECIAL_{len(symbols)}>')
-        
-        return symbols[:65536]
-    
-    def forward(self, symbol_sequence: List[str]) -> torch.Tensor:
-        """
-        Embed a sequence of symbols into the 65,536-dimensional space.
-        
-        Args:
-            symbol_sequence: List of symbols (characters, emojis, etc.)
-            
-        Returns:
-            Tensor of shape (seq_len, dim)
-        """
-        # Convert symbols to indices
-        indices = [self.symbol_to_idx.get(s, 0) for s in symbol_sequence]
-        
-        # Map to subspaces
-        subspace_tensors = []
-        for name, (start, end) in self.subspaces.items():
-            # Get indices for this subspace
-            sub_indices = torch.tensor([
-                max(0, min(idx - start, end - start - 1)) 
-                for idx in indices
-            ])
-            
-            # Embed
-            embedded = self.embeddings[name](sub_indices)
-            subspace_tensors.append(embedded)
-        
-        # Concatenate all subspaces
-        combined = torch.cat(subspace_tensors, dim=-1)
-        
-        # Apply cross-subspace attention
-        attended = self.cross_attention(combined)
-        
-        # Symbolic composition
-        composed = self.composition(attended)
-        
-        return composed
-    
-    def get_symbol_vector(self, symbol: str) -> torch.Tensor:
-        """Get the embedding vector for a single symbol."""
-        return self.forward([symbol])[0]
-    
-    def compute_symbolic_relationship(self, sym1: str, sym2: str) -> float:
-        """
-        Compute semantic relationship between two symbols.
-        Returns cosine similarity.
-        """
-        vec1 = self.get_symbol_vector(sym1)
-        vec2 = self.get_symbol_vector(sym2)
-        
-        similarity = torch.nn.functional.cosine_similarity(
-            vec1.unsqueeze(0), 
-            vec2.unsqueeze(0)
-        )
-        
-        return similarity.item()
+        self.tables = nn.ModuleDict()
+        self.offsets = {}
+        self.local_dims = {}
+        for sub, spec in SUBSPACES.items():
+            self.tables[sub] = nn.Embedding(spec["dims"], HEAD_DIM)
+            self.offsets[sub] = spec["offset"]
+            self.local_dims[sub] = spec["dims"]
+
+    def lookup(self, symbol_ids: torch.LongTensor) -> torch.Tensor:
+        """[seq] long → [seq, TOTAL_DIM] zero-padded across subspaces."""
+        device = symbol_ids.device
+        out = torch.zeros(symbol_ids.shape[0], TOTAL_DIM, device=device)
+        for sub, spec in SUBSPACES.items():
+            lo = spec["offset"]
+            hi = lo + spec["dims"]
+            mask = (symbol_ids >= lo) & (symbol_ids < hi)
+            if not mask.any():
+                continue
+            local = symbol_ids[mask] - lo
+            head = self.tables[sub](local)                 # [k, HEAD_DIM]
+            # write to the head-aligned slice for this subspace
+            head_start = (lo // HEAD_DIM) * HEAD_DIM
+            out[mask, head_start:head_start + HEAD_DIM] = head
+        return out
+
+    def embed_query(self, query: str) -> torch.Tensor:
+        ids = query_to_symbol_ids(query)
+        if not ids:
+            return torch.zeros(TOTAL_DIM)
+        symbol_ids = torch.tensor(ids, dtype=torch.long)
+        seq = self.lookup(symbol_ids)             # [seq, TOTAL_DIM]
+        return seq.mean(0)                        # [TOTAL_DIM]
+
+
+# ── cross-subspace interaction mask ────────────────────────────────
+# Per spec on the architecture page:
+#                 math  sci  lang  occ  emo  ctrl
+#   math           1.0  1.0  0.5  0.1  0.1  0.5
+#   science        1.0  1.0  0.5  0.1  0.1  0.3
+#   language       0.5  0.5  0.7  0.5  0.4  0.5
+#   occult         0.1  0.1  0.5  0.8  0.2  1.0
+#   emoji          0.1  0.1  0.4  0.2  0.3  0.1
+#   control        0.5  0.3  0.5  1.0  0.1  0.9
+SUBSPACE_NAMES = ["math", "science", "language", "occult", "emoji", "control"]
+SUBSPACE_MASK = torch.tensor([
+    [1.0, 1.0, 0.5, 0.1, 0.1, 0.5],
+    [1.0, 1.0, 0.5, 0.1, 0.1, 0.3],
+    [0.5, 0.5, 0.7, 0.5, 0.4, 0.5],
+    [0.1, 0.1, 0.5, 0.8, 0.2, 1.0],
+    [0.1, 0.1, 0.4, 0.2, 0.3, 0.1],
+    [0.5, 0.3, 0.5, 1.0, 0.1, 0.9],
+])
+
+
+def head_subspace_index(head_index: int) -> int:
+    """For a given attention head (0..63), return which of the 6 subspaces it sits in."""
+    boundaries = []
+    cursor = 0
+    for sub in SUBSPACE_NAMES:
+        cursor += SUBSPACES[sub]["dims"] // HEAD_DIM
+        boundaries.append(cursor)
+    for i, b in enumerate(boundaries):
+        if head_index < b:
+            return i
+    return len(SUBSPACE_NAMES) - 1
 
 
 class SymbolicCrossAttention(nn.Module):
     """
-    Cross-subspace attention mechanism.
-    Allows symbols from different domains to interact.
+    64-head multi-head attention with a per-head cross-subspace coupling
+    weight derived from `SUBSPACE_MASK`.
     """
-    
-    def __init__(self, dim: int, num_heads: int):
+    def __init__(self, num_heads: int = NUM_HEADS, head_dim: int = HEAD_DIM):
         super().__init__()
-        self.dim = dim
+        assert num_heads * head_dim == TOTAL_DIM
         self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        
-        self.q_proj = nn.Linear(dim, dim)
-        self.k_proj = nn.Linear(dim, dim)
-        self.v_proj = nn.Linear(dim, dim)
-        self.out_proj = nn.Linear(dim, dim)
-        
-        # Subspace interaction mask
-        self.register_buffer(
-            'interaction_mask',
-            self._build_interaction_mask()
-        )
-    
-    def _build_interaction_mask(self) -> torch.Tensor:
-        """
-        Build mask for which subspaces can interact.
-        Math ↔ Science: Strong
-        Language ↔ All: Medium
-        Occult ↔ Control: Strong
-        Emoji ↔ All: Weak
-        """
-        mask = torch.ones(65536, 65536) * 0.1  # Base weak interaction
-        
-        # Define subspace ranges
-        ranges = {
-            'math': (0, 4096),
-            'science': (4096, 12288),
-            'language': (12288, 28672),
-            'occult': (28672, 32768),
-            'emoji': (32768, 49152),
-            'control': (49152, 65536),
-        }
-        
-        # Math ↔ Science: Strong
-        m_start, m_end = ranges['math']
-        s_start, s_end = ranges['science']
-        mask[m_start:m_end, s_start:s_end] = 1.0
-        mask[s_start:s_end, m_start:m_end] = 1.0
-        
-        # Language ↔ All: Medium
-        l_start, l_end = ranges['language']
-        mask[l_start:l_end, :] = 0.5
-        mask[:, l_start:l_end] = 0.5
-        
-        # Occult ↔ Control: Strong
-        o_start, o_end = ranges['occult']
-        c_start, c_end = ranges['control']
-        mask[o_start:o_end, c_start:c_end] = 1.0
-        mask[c_start:c_end, o_start:o_end] = 1.0
-        
-        return mask
-    
+        self.head_dim = head_dim
+        self.q_proj = nn.Linear(TOTAL_DIM, TOTAL_DIM, bias=False)
+        self.k_proj = nn.Linear(TOTAL_DIM, TOTAL_DIM, bias=False)
+        self.v_proj = nn.Linear(TOTAL_DIM, TOTAL_DIM, bias=False)
+        self.o_proj = nn.Linear(TOTAL_DIM, TOTAL_DIM, bias=False)
+        self.norm   = nn.LayerNorm(TOTAL_DIM)
+        # Per-head coupling weights (averaged across the two heads in the pair)
+        head_weights = []
+        for i in range(num_heads):
+            si = head_subspace_index(i)
+            row = SUBSPACE_MASK[si].mean().item()
+            head_weights.append(row)
+        self.register_buffer("head_weight", torch.tensor(head_weights).view(1, num_heads, 1, 1))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, _ = x.shape
-        
-        # Project to Q, K, V
-        q = self.q_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
-        k = self.k_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
-        v = self.v_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
-        
-        # Transpose for attention
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-        
-        # Compute attention scores
-        scores = torch.matmul(q, k.transpose(-2, -1)) / np.sqrt(self.head_dim)
-        
-        # Apply interaction mask
-        scores = scores * self.interaction_mask[:seq_len, :seq_len]
-        
-        # Softmax
-        attn_weights = torch.nn.functional.softmax(scores, dim=-1)
-        
-        # Apply attention
-        attn_output = torch.matmul(attn_weights, v)
-        
-        # Reshape and project
-        attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.view(batch_size, seq_len, self.dim)
-        
-        return self.out_proj(attn_output)
+        """
+        x: [B, T, TOTAL_DIM]  →  [B, T, TOTAL_DIM]
+        """
+        B, T, D = x.shape
+        H, Hd = self.num_heads, self.head_dim
+        q = self.q_proj(x).view(B, T, H, Hd).transpose(1, 2)   # [B, H, T, Hd]
+        k = self.k_proj(x).view(B, T, H, Hd).transpose(1, 2)
+        v = self.v_proj(x).view(B, T, H, Hd).transpose(1, 2)
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(Hd)
+        # apply cross-subspace coupling: scale by per-head weight
+        scores = scores * self.head_weight                     # [B, H, T, T]
+        attn = F.softmax(scores, dim=-1)
+        out = torch.matmul(attn, v).transpose(1, 2).contiguous().view(B, T, D)
+        out = self.o_proj(out)
+        return self.norm(x + out)
 
 
 class SymbolicComposition(nn.Module):
     """
-    Composes symbolic representations through learned transformations.
+    Gated residual composition. 2× expansion, 4 parallel sigmoid gates over
+    the residual, GELU + LayerNorm. Produces the per-node next-state vector.
     """
-    
-    def __init__(self, dim: int):
+    def __init__(self, dim: int = TOTAL_DIM):
         super().__init__()
-        self.dim = dim
-        
-        self.composition_layers = nn.Sequential(
-            nn.Linear(dim, dim * 2),
-            nn.LayerNorm(dim * 2),
-            nn.GELU(),
-            nn.Linear(dim * 2, dim),
-            nn.LayerNorm(dim),
-        )
-        
-        # Symbolic activation gates
-        self.gates = nn.ModuleList([
-            nn.Linear(dim, dim) for _ in range(4)
-        ])
-    
+        self.expand = nn.Linear(dim, dim * 2)
+        self.norm   = nn.LayerNorm(dim * 2)
+        self.proj   = nn.Linear(dim * 2, dim)
+        # 4 parallel gates
+        self.gates  = nn.ModuleList([nn.Linear(dim, dim) for _ in range(4)])
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Base composition
-        composed = self.composition_layers(x)
-        
-        # Gated activation
+        # x: [B, T, dim]
+        expanded = F.gelu(self.norm(self.expand(x)))
+        projected = self.proj(expanded)
+        gate_out = torch.zeros_like(x)
         for gate in self.gates:
             g = torch.sigmoid(gate(x))
-            composed = composed * g + x * (1 - g)
-        
-        return composed
+            gate_out = gate_out + g * x
+        gate_out = gate_out / len(self.gates)
+        return projected + gate_out
 
 
-# Example usage
+# ── convenience: full forward ──────────────────────────────────────
+@dataclass
+class SymbolicState:
+    state: torch.Tensor          # [TOTAL_DIM]
+    n_symbols: int
+    subspaces: dict[str, int]    # per-subspace symbol counts
+
+
+def encode(query: str,
+           emb: UniversalSemioticEmbedding | None = None,
+           sam: SymbolicCrossAttention | None = None,
+           comp: SymbolicComposition | None = None) -> SymbolicState:
+    """
+    Convenience wrapper: query → SymbolicState. Pass module instances or
+    create defaults (random init — for testing only).
+    """
+    emb  = emb  or UniversalSemioticEmbedding()
+    sam  = sam  or SymbolicCrossAttention()
+    comp = comp or SymbolicComposition()
+
+    ids = query_to_symbol_ids(query)
+    # Per-subspace counts
+    sub_counts = {s: 0 for s in SUBSPACE_NAMES}
+    for sid in ids:
+        for sub, spec in SUBSPACES.items():
+            if spec["offset"] <= sid < spec["offset"] + spec["dims"]:
+                sub_counts[sub] += 1
+                break
+
+    if not ids:
+        state = torch.zeros(TOTAL_DIM)
+    else:
+        symbol_ids = torch.tensor(ids, dtype=torch.long)
+        seq = emb.lookup(symbol_ids).unsqueeze(0)         # [1, seq, D]
+        x   = sam(seq)
+        x   = comp(x)
+        state = x.mean(1).squeeze(0)                       # [D]
+    return SymbolicState(state=state, n_symbols=len(ids), subspaces=sub_counts)
+
+
 if __name__ == "__main__":
-    # Initialize embedding
-    use = UniversalSemioticEmbedding()
-    
-    # Example symbol sequence
-    sequence = ['∫', '∂', 'x', ' ', '→', ' ', '📊', '⚡', '🔬']
-    
-    # Get embeddings
-    embeddings = use(sequence)
-    print(f"Embedding shape: {embeddings.shape}")
-    print(f"Sample values: {embeddings[0][:10]}")
-    
-    # Compute symbolic relationships
-    sim = use.compute_symbolic_relationship('∫', '∑')
-    print(f"Similarity between ∫ and ∑: {sim:.4f}")
-    
-    sim = use.compute_symbolic_relationship('☉', '♂')
-    print(f"Similarity between ☉ and ♂: {sim:.4f}")
+    # smoke test
+    samples = ["∫∂x → ?", "☉☽☿ in alchemy", "🧬→protein", "道法自然", "F=ma", "∇×B = μ₀J"]
+    emb = UniversalSemioticEmbedding()
+    sam = SymbolicCrossAttention()
+    comp = SymbolicComposition()
+    for q in samples:
+        st = encode(q, emb, sam, comp)
+        print(f"{q!r:<28} → {st.n_symbols:>2} symbols  | subspaces={st.subspaces}  state.shape={tuple(st.state.shape)}")
