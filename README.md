@@ -173,9 +173,9 @@ Splitter on every paid call: **35% founder · 35% agent · 15% ops · 15% referr
 
 ## R&D · papers
 
-- **CHAINSTATE Whitepaper** (in writing) — placeholder. Mirror URL: `https://huggingface.co/spaces/CPater/chainstate/resolve/main/whitepaper.pdf`
-- **Supporting paper**: *Distributed Cognitive Work in Edge-Resident Language-Model Networks* — 14-page A4 preprint, 22 equations, 5 figures. Live at [ResearchGate publication 406896310](https://www.researchgate.net/publication/406896310_Distributed_Cognitive_Work_in_Edge-Resident_Language-Model_Networks) and mirrored on the Space at `NWOWorkfield.pdf`.
-- **Audio companion**: `podcast.m4a` on the Space (drop the file in; the player wires up automatically).
+- **CHAINSTATE Whitepaper v1.0** — *A Symbolic-Weight Blockchain for Cognitive Transactions: Reputation-Weighted Bayesian Consensus over Distributed Language-Model Swarms with Post-Quantum Security and NWO-ASM / NEURO Composition.* 19-page A4 paper, 9 numbered equations, 7 figures, 4 tables, 20 references. Live at [ResearchGate publication 407444375](https://www.researchgate.net/publication/407444375_CHAINSTATE_WHITEPAPER_A_Symbolic-Weight_Blockchain_for_Cognitive_Transactions) and mirrored on the Space at `whitepaper.pdf`.
+- **Foundational paper**: *Distributed Cognitive Work in Edge-Resident Language-Model Networks* — 14-page A4 preprint, 22 equations, 5 figures. The thermodynamic and information-theoretic framework that motivates CHAINSTATE; cited as reference [5] in the whitepaper above. Live at [ResearchGate publication 406896310](https://www.researchgate.net/publication/406896310_Distributed_Cognitive_Work_in_Edge-Resident_Language-Model_Networks) and mirrored on the Space at `NWOWorkfield.pdf`.
+- **Audio companion**: `podcast.m4a` on the Space — author commentary on the CHAINSTATE Whitepaper only (the foundational paper has no audio companion). The R&D page on the Space wires the player up automatically.
 
 ---
 
