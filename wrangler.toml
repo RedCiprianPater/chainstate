@@ -1,0 +1,32 @@
+name = "chainstate"
+main = "workers/edge-worker.js"
+compatibility_date = "2024-01-01"
+
+# KV Namespaces
+[[kv_namespaces]]
+binding = "CHAINSTATE_CACHE"
+id = "your_cache_namespace_id"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_NODES"
+id = "your_nodes_namespace_id"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CONSENSUS"
+id = "your_consensus_namespace_id"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "CONSENSUS_COORDINATOR"
+class_name = "ConsensusCoordinator"
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"
+SWARM_SIZE = "50"
+CONSENSUS_DEPTH = "3"
+
+# Secrets (set via wrangler secret put)
+# - IBM_QUANTUM_TOKEN
+# - CHINESE_QC_TOKEN
+# - ADMIN_API_KEY

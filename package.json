@@ -1,0 +1,23 @@
+{
+  "name": "chainstate-worker",
+  "version": "0.1.0",
+  "description": "CHAINSTATE Edge Worker - Symbolic-Weight Blockchain",
+  "main": "workers/edge-worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "keywords": [
+    "blockchain",
+    "ai",
+    "swarm",
+    "consensus",
+    "symbolic"
+  ],
+  "author": "NWO Research Collective",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
