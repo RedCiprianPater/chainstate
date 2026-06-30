@@ -3,35 +3,22 @@ main = "workers/edge-worker.js"
 compatibility_date = "2024-09-23"
 
 # -----------------------------------------------------------------
-# KV namespaces — OPTIONAL. The worker runs without them (graceful
-# fallback: no cache, no beacon persistence, no rate limit) so you
-# can deploy the CORS-hardened worker immediately and add KV later.
-#
-# To enable persistence and caching:
-#
-#   1. Create the three namespaces on your laptop:
-#      npx wrangler kv:namespace create CHAINSTATE_NODES
-#      npx wrangler kv:namespace create CHAINSTATE_CACHE
-#      npx wrangler kv:namespace create CHAINSTATE_CONSENSUS
-#
-#   2. Each command prints something like:
-#      { binding = "CHAINSTATE_NODES", id = "1a2b3c4d5e6f7890ab..." }
-#
-#   3. Uncomment the three blocks below, paste the printed `id`
-#      values into the matching block, commit and redeploy.
+# KV namespaces — IDs match the three namespaces visible in the
+# Cloudflare dashboard (Workers & Pages → KV). Recover/rotate via:
+#   wrangler kv:namespace list
 # -----------------------------------------------------------------
 
-# [[kv_namespaces]]
-# binding = "CHAINSTATE_NODES"
-# id      = "PASTE_REAL_ID_HERE"
-#
-# [[kv_namespaces]]
-# binding = "CHAINSTATE_CACHE"
-# id      = "PASTE_REAL_ID_HERE"
-#
-# [[kv_namespaces]]
-# binding = "CHAINSTATE_CONSENSUS"
-# id      = "PASTE_REAL_ID_HERE"
+[[kv_namespaces]]
+binding = "CHAINSTATE_NODES"
+id      = "5f5daf062a6643acbf8fd667ccc93ace"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CACHE"
+id      = "5c92ee3b27fa417384bedb2c816ee7d3"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CONSENSUS"
+id      = "88101057669545978a49471f50071b75"
 
 [vars]
 SWARM_SIZE         = "50"
