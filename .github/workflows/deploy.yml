@@ -57,7 +57,7 @@ jobs:
               ignore_patterns=[
                   ".git*", "node_modules*", ".github*",
                   "workers*", "wrangler.toml", "package*.json",
-                  "src*", "contracts*", "docs*",
+                  "src*", "contracts*", "docs*", "hf-chat*",
                   "*.pyc", "__pycache__*",
               ],
           )
