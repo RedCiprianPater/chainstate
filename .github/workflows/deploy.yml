@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Minimal token permissions — write to nothing in the repo itself.
+# Only the CF + HF secrets do any external work.
+permissions:
+  contents: read
+
 jobs:
   cf-worker:
     name: Deploy Cloudflare Worker
@@ -24,7 +29,9 @@ jobs:
         with:
           apiToken:  ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          # wrangler.toml at repo root is auto-detected
+          # wrangler.toml at repo root is auto-detected.
+          # On first run, this CREATES the worker with name=chainstate-worker
+          # (no need to pre-create it in the Cloudflare dashboard).
 
   hf-space:
     name: Push HF Space
@@ -35,7 +42,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install --quiet huggingface_hub
-      - name: Upload to HF Space
+      - name: Upload to HF Space (fine-grained token, scoped to CPater/chainstate only)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -50,7 +57,8 @@ jobs:
               ignore_patterns=[
                   ".git*", "node_modules*", ".github*",
                   "workers*", "wrangler.toml", "package*.json",
-                  "src*", "contracts*", "*.pyc", "__pycache__*",
+                  "src*", "contracts*", "docs*",
+                  "*.pyc", "__pycache__*",
               ],
           )
           print("HF Space updated ✓")
