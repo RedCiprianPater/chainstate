@@ -38,7 +38,7 @@ id      = "88101057669545978a49471f50071b75"
 # Then replace the placeholder ID below with the real one shown after creation.
 [[kv_namespaces]]
 binding = "IDENTITY"
-id      = "PASTE_IDENTITY_NAMESPACE_ID_HERE"
+id      = "06b51dc6cb4647d09735851d55fb6a9d"
 
 
 # -----------------------------------------------------------------------------
