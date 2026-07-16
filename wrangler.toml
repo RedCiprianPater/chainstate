@@ -1,12 +1,24 @@
+# =============================================================================
+# chainstate-worker · Cloudflare Worker configuration
+# =============================================================================
+# v0.7.1 · adds: IDENTITY KV namespace, hourly seed cron, self-audit endpoints,
+#                identity binding, expanded FETCH_ALLOWLIST, SEED_QUERIES,
+#                optional Postgres HTTP wiring
+#
+# Recover/rotate KV IDs via: wrangler kv:namespace list
+# =============================================================================
+
 name = "chainstate-worker"
 main = "workers/edge-worker.js"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-07-16"
 
-# -----------------------------------------------------------------
-# KV namespaces — IDs match the three namespaces visible in the
-# Cloudflare dashboard (Workers & Pages → KV). Recover/rotate via:
-#   wrangler kv:namespace list
-# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# KV namespaces
+# -----------------------------------------------------------------------------
+# IDs match the namespaces visible in the Cloudflare dashboard
+# (Workers & Pages → KV).
+# -----------------------------------------------------------------------------
 
 [[kv_namespaces]]
 binding = "CHAINSTATE_NODES"
@@ -20,13 +32,94 @@ id      = "5c92ee3b27fa417384bedb2c816ee7d3"
 binding = "CHAINSTATE_CONSENSUS"
 id      = "88101057669545978a49471f50071b75"
 
-[vars]
-SWARM_SIZE         = "50"
-CONSENSUS_DEPTH    = "3"
-CACHE_TTL          = "300"     # seconds; 5 minutes
-RATE_LIMIT         = "60"      # per IP per minute
+# NEW v0.7.1 — self-referential identity binding
+# Before deploying, create this namespace:
+#   Cloudflare dashboard → Workers & Pages → KV → Create namespace → IDENTITY
+# Then replace the placeholder ID below with the real one shown after creation.
+[[kv_namespaces]]
+binding = "IDENTITY"
+id      = "PASTE_IDENTITY_NAMESPACE_ID_HERE"
 
-# Optional — uncomment to bind a custom route on a CF zone you own:
+
+# -----------------------------------------------------------------------------
+# Cron triggers
+# -----------------------------------------------------------------------------
+# Multiple crons per worker are supported. The scheduled() handler receives
+# `event.cron` as the pattern that fired.
+# -----------------------------------------------------------------------------
+
+[triggers]
+crons = [
+  # NEW v0.7.1 · hourly seed queries at :00 of every hour
+  "0 * * * *"
+]
+
+
+# -----------------------------------------------------------------------------
+# Variables — non-secret configuration
+# -----------------------------------------------------------------------------
+# Long values (FETCH_ALLOWLIST, SEED_QUERIES, IDENTITY_CONTRACTS,
+# IDENTITY_ENDPOINTS) are recommended to set in the Cloudflare dashboard
+# under Settings → Variables and Secrets rather than in git-tracked toml,
+# because they change independently of code.
+#
+# Everything below IS safe to keep in git.
+# -----------------------------------------------------------------------------
+
+[vars]
+# --- existing v0.7.0 vars ---
+SWARM_SIZE            = "50"
+CONSENSUS_DEPTH       = "3"
+CACHE_TTL             = "300"     # seconds; 5 minutes
+RATE_LIMIT            = "60"      # per IP per minute
+
+# --- NEW v0.7.1 vars ---
+WORKER_VERSION        = "v0.7.1"
+SEED_CRON_ENABLED     = "true"
+REFLECT_MAX_FOLLOWUPS = "3"
+FETCH_MAX_BYTES       = "500000"
+FETCH_TIMEOUT_MS      = "15000"
+FETCH_STRIP_MAX_BYTES = "20000"
+
+
+# -----------------------------------------------------------------------------
+# Values to set in the Cloudflare dashboard (NOT here)
+# -----------------------------------------------------------------------------
+# Add these under Settings → Variables and Secrets. See 01-worker-env-vars.txt
+# for the full values ready to paste:
+#
+#   FETCH_ALLOWLIST         (44 hostname patterns, comma-separated)
+#   SEED_QUERIES            (JSON array of 5 seeds)
+#   IDENTITY_CONTRACTS      (JSON of the 4 canonical contract addresses)
+#   IDENTITY_ENDPOINTS      (JSON array of worker paths)
+#
+#   POSTGRES_HTTP_URL       (Render PostgREST URL — after Postgres provisioned)
+#   POSTGRES_HTTP_TOKEN     (optional PostgREST bearer)
+#
+#   AUDIT_ADMIN_TOKEN       (SECRET — for /identity/refresh)
+# -----------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
+# Optional — custom domain routing
+# -----------------------------------------------------------------------------
+
 # routes = [
 #   { pattern = "chainstate.example.com/*", zone_name = "example.com" },
 # ]
+
+
+# -----------------------------------------------------------------------------
+# Optional — Hyperdrive for direct Postgres from Worker
+# -----------------------------------------------------------------------------
+# Uncomment only if you want direct TCP-over-HTTPS to Postgres. Simpler default
+# is HTTP via PostgREST (POSTGRES_HTTP_URL dashboard var above).
+
+# [[hyperdrive]]
+# binding = "POSTGRES"
+# id      = "PASTE_HYPERDRIVE_ID_HERE"
+
+
+# =============================================================================
+# END
+# =============================================================================
