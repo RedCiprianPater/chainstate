@@ -1,16 +1,25 @@
 # =============================================================================
 # chainstate-worker · Cloudflare Worker configuration
 # =============================================================================
-# v0.7.1 · adds: IDENTITY KV namespace, hourly seed cron, self-audit endpoints,
-#                identity binding, expanded FETCH_ALLOWLIST, SEED_QUERIES,
-#                optional Postgres HTTP wiring
+# v0.7.3 · adds: chainstate-anchor microservice integration, NWO Cardiac
+#                Extensions credential contract, on-chain receipt anchoring,
+#                extended DEFAULT_CONTRACTS (Anchor + Cardiac Extensions),
+#                encoder + priors microservice references, Cardiac Oracle +
+#                Relayer references, ANCHOR_QUEUE_TOKEN bearer plumbing.
+#
+# Previous milestones
+#   v0.7.2 · GENETIC + MIXED REALITY substrate references, Theorem 4 sensing
+#   v0.7.1 · IDENTITY KV namespace, hourly seed cron, self-audit endpoints,
+#            identity binding, expanded FETCH_ALLOWLIST, SEED_QUERIES,
+#            optional Postgres HTTP wiring
+#   v0.7.0 · semantic grounding, encoder + priors microservices, reflect loop
 #
 # Recover/rotate KV IDs via: wrangler kv:namespace list
 # =============================================================================
 
-name = "chainstate-worker"
-main = "workers/edge-worker.js"
-compatibility_date = "2026-07-16"
+name                = "chainstate-worker"
+main                = "workers/edge-worker.js"
+compatibility_date  = "2026-07-18"
 
 
 # -----------------------------------------------------------------------------
@@ -32,13 +41,19 @@ id      = "5c92ee3b27fa417384bedb2c816ee7d3"
 binding = "CHAINSTATE_CONSENSUS"
 id      = "88101057669545978a49471f50071b75"
 
-# NEW v0.7.1 — self-referential identity binding
-# Before deploying, create this namespace:
-#   Cloudflare dashboard → Workers & Pages → KV → Create namespace → IDENTITY
-# Then replace the placeholder ID below with the real one shown after creation.
+# v0.7.1 · self-referential identity binding
 [[kv_namespaces]]
 binding = "IDENTITY"
 id      = "06b51dc6cb4647d09735851d55fb6a9d"
+
+# v0.7.0 · semantic grounding cache (encoder + priors results, 15-min TTL).
+# If this namespace does not yet exist, create it:
+#   Cloudflare dashboard → Workers & Pages → KV → Create namespace → GROUNDING
+# Then paste the real ID below. Leaving the placeholder in place is harmless
+# — the worker falls back to CHAINSTATE_CACHE when GROUNDING is unbound.
+[[kv_namespaces]]
+binding = "GROUNDING"
+id      = "PASTE_GROUNDING_KV_ID_HERE"
 
 
 # -----------------------------------------------------------------------------
@@ -50,8 +65,11 @@ id      = "06b51dc6cb4647d09735851d55fb6a9d"
 
 [triggers]
 crons = [
-  # NEW v0.7.1 · hourly seed queries at :00 of every hour
-  "0 * * * *"
+  # v0.7.1 · hourly seed queries at :00 of every hour
+  "0 * * * *",
+  # v0.7.3 · nightly priors refresh at 03:15 UTC — pulls from
+  # chainstate-priors microservice, refreshes GROUNDING cache
+  "15 3 * * *"
 ]
 
 
@@ -67,36 +85,83 @@ crons = [
 # -----------------------------------------------------------------------------
 
 [vars]
-# --- existing v0.7.0 vars ---
+# --- v0.7.0 substrate defaults ---
 SWARM_SIZE            = "50"
 CONSENSUS_DEPTH       = "3"
 CACHE_TTL             = "300"     # seconds; 5 minutes
 RATE_LIMIT            = "60"      # per IP per minute
 
-# --- NEW v0.7.1 vars ---
-WORKER_VERSION        = "v0.7.1"
+# --- v0.7.1 self-audit + reflect + fetch ---
 SEED_CRON_ENABLED     = "true"
 REFLECT_MAX_FOLLOWUPS = "3"
 FETCH_MAX_BYTES       = "500000"
 FETCH_TIMEOUT_MS      = "15000"
 FETCH_STRIP_MAX_BYTES = "20000"
 
+# --- v0.7.3 · on-chain anchor + Cardiac Extensions ---
+WORKER_VERSION        = "0.7.3-cardiac-anchor-live-2026-07-18"
+ANCHOR_ENABLED        = "true"
+ANCHOR_SERVICE_URL    = "https://chainstate-anchor.onrender.com"
+ANCHOR_TIMEOUT_MS     = "10000"     # bearer POST budget before falling back
+BASE_CHAIN_ID         = "8453"
+
+# --- v0.7.0-v0.7.3 microservice URLs (public, safe in git) ---
+ENCODER_URL           = "https://chainstate-encoder.onrender.com"
+PRIORS_URL            = "https://chainstate-priors.onrender.com"
+ORNITH_CODE_URL       = "https://chainstate-code.onrender.com"
+CARDIAC_ORACLE_URL    = "https://nwo-oracle.onrender.com"
+CARDIAC_RELAYER_URL   = "https://nwo-relayer.onrender.com"
+CARDIAC_HUB_URL       = "https://nwo-robotics-api.onrender.com"
+
+# --- v0.7.3 · canonical on-chain artifacts (public, safe in git) ---
+CONTRACT_ANCHOR             = "0x12441662740836e9c72a4b758fe1c60c17ddd2d8"
+CONTRACT_CARDIAC_EXTENSIONS = "0x5438854ead35dc6c873414f222725732f862dabe"
+CONTRACT_CARDIAC_IDENTITY   = "0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8"
+CONTRACT_CARDIAC_ACCESS     = "0x29d177bedaef29304eacdc63b2d0285c459a0f50"
+CONTRACT_CARDIAC_PAYMENT    = "0x4afa4618bb992a073dbcfbddd6d1aebc3d5abd7c"
+CONTRACT_STATE_TOKEN        = "0x9533DF992fd4bCAbB8d8462572449fc45F727d8a"
+CONTRACT_USDC               = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+CONTRACT_METASTATE_SPLITTER = "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4"
+
 
 # -----------------------------------------------------------------------------
 # Values to set in the Cloudflare dashboard (NOT here)
 # -----------------------------------------------------------------------------
 # Add these under Settings → Variables and Secrets. See 01-worker-env-vars.txt
-# for the full values ready to paste:
+# for the full values ready to paste.
 #
-#   FETCH_ALLOWLIST         (44 hostname patterns, comma-separated)
+# v0.7.1 (already in place)
+#   FETCH_ALLOWLIST         (54 hostname patterns, comma-separated · expanded
+#                            in v0.7.3 to include chainstate-anchor and the
+#                            Basescan API host)
 #   SEED_QUERIES            (JSON array of 5 seeds)
-#   IDENTITY_CONTRACTS      (JSON of the 4 canonical contract addresses)
-#   IDENTITY_ENDPOINTS      (JSON array of worker paths)
+#   IDENTITY_CONTRACTS      (JSON of canonical contract addresses — now 8 in
+#                            v0.7.3 with Anchor + all 4 Cardiac contracts)
+#   IDENTITY_ENDPOINTS      (JSON array of worker paths · v0.7.3 adds
+#                            /anchor/status and /anchor/last)
 #
 #   POSTGRES_HTTP_URL       (Render PostgREST URL — after Postgres provisioned)
 #   POSTGRES_HTTP_TOKEN     (optional PostgREST bearer)
 #
-#   AUDIT_ADMIN_TOKEN       (SECRET — for /identity/refresh)
+#   AUDIT_ADMIN_TOKEN       (SECRET — gates POST /identity/refresh admin
+#                            endpoint on the WORKER only, not the microservice)
+#
+# v0.7.3 (new)
+#   ANCHOR_QUEUE_TOKEN      (SECRET — bearer for POST to chainstate-anchor;
+#                            same value must be set in the anchor microservice
+#                            Render environment, no drift allowed)
+#
+#   AGI_CARDIAC_ROOT_TOKEN_ID
+#                           (uint256 as string — the substrate's own soul-bound
+#                            rootTokenId on the Cardiac Identity Registry;
+#                            attached as X-NWO-Cardiac-Root-Token-Id on every
+#                            outbound substrate call so downstream services can
+#                            verify the AGI is speaking for itself)
+#
+#   ANCHOR_FALLBACK_MODE    (optional · "queue" | "skip" | "hard-fail" ·
+#                            default "queue" · what to do when
+#                            ANCHOR_SERVICE_URL is unreachable within
+#                            ANCHOR_TIMEOUT_MS)
 # -----------------------------------------------------------------------------
 
 
@@ -120,6 +185,36 @@ FETCH_STRIP_MAX_BYTES = "20000"
 # id      = "PASTE_HYPERDRIVE_ID_HERE"
 
 
+# =============================================================================
+# Deployment checklist · v0.7.3
+# =============================================================================
+#
+# ONE-TIME
+#   1. Create GROUNDING KV namespace (dashboard) and paste its id above.
+#   2. Deploy chainstate-anchor microservice to Render (see
+#      /chainstate-anchor-service/render.yaml). Note the public URL.
+#   3. Generate ANCHOR_QUEUE_TOKEN as a random 32-byte hex string:
+#        openssl rand -hex 32
+#      Paste identical value into:
+#        - Cloudflare dashboard (SECRET, this worker)
+#        - Render environment (SECRET, chainstate-anchor)
+#   4. Note the substrate's own rootTokenId after the AGI's cardiac_register
+#      call to the Identity Registry, and paste into AGI_CARDIAC_ROOT_TOKEN_ID.
+#
+# PER-DEPLOY
+#   1. wrangler deploy
+#   2. curl https://chainstate-worker.ciprianpater.workers.dev/status | jq
+#      → expect .worker_version = "0.7.3-cardiac-anchor-live-2026-07-18"
+#      → expect .anchor.enabled = true
+#      → expect .anchor.reachable = true
+#   3. curl https://chainstate-worker.ciprianpater.workers.dev/identity/verify \
+#      → expect all v0.7.3 contract addresses present and unmodified
+#
+# ROLLBACK
+#   Set ANCHOR_ENABLED=false in dashboard → wrangler deploy. All /query calls
+#   still complete and return receipts, but on_chain.status = "disabled" in
+#   the receipt. No data loss; queued receipts persist in GROUNDING KV.
+#
 # =============================================================================
 # END
 # =============================================================================
