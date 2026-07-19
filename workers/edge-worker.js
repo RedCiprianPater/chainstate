@@ -355,6 +355,9 @@ const FETCH_ALLOW_DEFAULT = [
   "chainstate-code.onrender.com",
   "chainstate-encoder.onrender.com",
   "chainstate-priors.onrender.com",
+  // ── v0.7.3.1 · anchor microservice + Basescan API for SCAN page ──
+  "chainstate-anchor.onrender.com",
+  "api.basescan.org",
   // ── v0.7.1 additions · NWO ecosystem Render services ──
   "nwo-capital-api.onrender.com",
   "nwo-robotics-api.onrender.com",
@@ -1850,15 +1853,108 @@ async function archiveReceiptToPostgres(receipt, env) {
 // silent from the Worker's perspective — receipts remain in KV and Supabase
 // regardless; the chain anchor is a supplemental durability layer.
 
-async function anchorReceiptToChain(receipt, env) {
-  if (!env.ANCHOR_URL || !env.ANCHOR_QUEUE_TOKEN) return;
+// ═══════════════════════════════════════════════════════════════════════
+// v0.7.3.1 · ANCHOR CONFIG + TELEMETRY (additive · observability layer)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Reads env vars with fallback aliases so both dashboard var names work:
+//   ANCHOR_URL (original) OR ANCHOR_SERVICE_URL (alias · matches wrangler.toml)
+//   ANCHOR_URL wins on conflict.
+//
+// Telemetry counters persist in CHAINSTATE_CACHE under `anchor:telemetry`
+// with a 90-day TTL. Every anchor call increments the appropriate counter
+// and records the last response status, body preview, and tx hash.
+
+const ANCHOR_TELEMETRY_KEY = "anchor:telemetry";
+
+function getAnchorConfig(env) {
+  const url        = env.ANCHOR_URL || env.ANCHOR_SERVICE_URL || null;
+  const token      = env.ANCHOR_QUEUE_TOKEN || null;
+  const enabledEnv = (env.ANCHOR_ENABLED || "").toLowerCase();
+  const disabled   = enabledEnv === "false" || enabledEnv === "0" || enabledEnv === "off";
+  const timeoutMs  = parseInt(env.ANCHOR_TIMEOUT_MS || "10000", 10);
+  return {
+    url,
+    token,
+    enabled: !!(url && token) && !disabled,
+    timeoutMs,
+    source_var: env.ANCHOR_URL ? "ANCHOR_URL" : (env.ANCHOR_SERVICE_URL ? "ANCHOR_SERVICE_URL" : null),
+    receipt_path: env.ANCHOR_RECEIPT_PATH || "/anchor/receipt",
+    refusal_path: env.ANCHOR_REFUSAL_PATH || "/anchor/refusal"
+  };
+}
+
+function emptyAnchorTelemetry() {
+  return {
+    queued: 0,
+    sent: 0,
+    failed: 0,
+    refusals_queued: 0,
+    refusals_sent: 0,
+    refusals_failed: 0,
+    last_call_at: null,
+    last_endpoint: null,
+    last_status: null,
+    last_error: null,
+    last_tx_hash: null,
+    last_body_preview: null,
+    last_elapsed_ms: null,
+    last_refusal_status: null,
+    last_refusal_error: null,
+    counted_since: new Date().toISOString()
+  };
+}
+
+async function readAnchorTelemetry(env) {
+  if (!env.CHAINSTATE_CACHE) return emptyAnchorTelemetry();
   try {
-    await fetch(env.ANCHOR_URL.replace(/\/+$/, "") + "/anchor/receipt", {
+    const raw = await env.CHAINSTATE_CACHE.get(ANCHOR_TELEMETRY_KEY);
+    if (raw) return Object.assign(emptyAnchorTelemetry(), JSON.parse(raw));
+  } catch (_) {}
+  return emptyAnchorTelemetry();
+}
+
+async function writeAnchorTelemetry(env, patch) {
+  if (!env.CHAINSTATE_CACHE) return;
+  try {
+    const current = await readAnchorTelemetry(env);
+    const next = Object.assign({}, current, patch);
+    await env.CHAINSTATE_CACHE.put(ANCHOR_TELEMETRY_KEY, JSON.stringify(next),
+      { expirationTtl: 90 * 86400 });
+  } catch (_) {}
+}
+
+async function anchorReceiptToChain(receipt, env) {
+  const cfg = getAnchorConfig(env);
+  if (!cfg.enabled) {
+    // Record reason so /status can surface it
+    await writeAnchorTelemetry(env, {
+      last_call_at: new Date().toISOString(),
+      last_status: null,
+      last_error: cfg.url
+        ? (cfg.token ? "ANCHOR_ENABLED=false" : "ANCHOR_QUEUE_TOKEN missing")
+        : "ANCHOR_URL / ANCHOR_SERVICE_URL missing"
+    });
+    return;
+  }
+  const endpoint = cfg.url.replace(/\/+$/, "") + cfg.receipt_path;
+  const t0 = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
+  const before = await readAnchorTelemetry(env);
+  await writeAnchorTelemetry(env, {
+    queued: (before.queued || 0) + 1,
+    last_call_at: new Date().toISOString(),
+    last_endpoint: endpoint,
+  });
+  try {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+        "Authorization": "Bearer " + cfg.token
       },
+      signal: ctrl.signal,
       body: JSON.stringify({
         qHash: receipt.qHash,
         semantic_hash: receipt.grounding ? receipt.grounding.semantic_hash : null,
@@ -1880,24 +1976,66 @@ async function anchorReceiptToChain(receipt, env) {
           : null
       })
     });
-  } catch (_) {
-    // Silent fail — chain anchor is supplemental, not source of truth.
+    const elapsed = Date.now() - t0;
+    let bodyText = "";
+    try { bodyText = (await res.text()).slice(0, 400); } catch (_) {}
+    let txHash = null;
+    try {
+      const parsed = JSON.parse(bodyText);
+      txHash = parsed.tx_hash || parsed.txHash || parsed.hash || parsed.transaction_hash || null;
+    } catch (_) {}
+    const after = await readAnchorTelemetry(env);
+    if (res.ok) {
+      await writeAnchorTelemetry(env, {
+        sent: (after.sent || 0) + 1,
+        last_status: res.status,
+        last_error: null,
+        last_tx_hash: txHash,
+        last_body_preview: bodyText.slice(0, 200),
+        last_elapsed_ms: elapsed
+      });
+    } else {
+      await writeAnchorTelemetry(env, {
+        failed: (after.failed || 0) + 1,
+        last_status: res.status,
+        last_error: bodyText.slice(0, 300),
+        last_elapsed_ms: elapsed
+      });
+    }
+  } catch (e) {
+    // v0.7.3.1 · was silent-fail; now captured for /status + /anchor/status
+    const after = await readAnchorTelemetry(env);
+    await writeAnchorTelemetry(env, {
+      failed: (after.failed || 0) + 1,
+      last_status: 0,
+      last_error: String(e).slice(0, 300),
+      last_elapsed_ms: Date.now() - t0
+    });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 async function anchorRefusalToChain(receipt, env) {
-  if (!env.ANCHOR_URL || !env.ANCHOR_QUEUE_TOKEN) return;
+  const cfg = getAnchorConfig(env);
+  if (!cfg.enabled) return;
   if (receipt.verdict !== "REFUSED") return;
   const violations = (receipt.multimodal && receipt.multimodal.deontic
                       && receipt.multimodal.deontic.violations) || [];
   if (!violations.length) return;
+  const endpoint = cfg.url.replace(/\/+$/, "") + cfg.refusal_path;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
+  const before = await readAnchorTelemetry(env);
+  await writeAnchorTelemetry(env, { refusals_queued: (before.refusals_queued || 0) + 1 });
   try {
-    await fetch(env.ANCHOR_URL.replace(/\/+$/, "") + "/anchor/refusal", {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+        "Authorization": "Bearer " + cfg.token
       },
+      signal: ctrl.signal,
       body: JSON.stringify({
         qHash: receipt.qHash,
         category: violations[0].category,
@@ -1905,7 +2043,96 @@ async function anchorRefusalToChain(receipt, env) {
         refused_at: receipt.timestamp
       })
     });
-  } catch (_) {}
+    let bodyText = "";
+    try { bodyText = (await res.text()).slice(0, 400); } catch (_) {}
+    const after = await readAnchorTelemetry(env);
+    if (res.ok) {
+      await writeAnchorTelemetry(env, {
+        refusals_sent: (after.refusals_sent || 0) + 1,
+        last_refusal_status: res.status,
+        last_refusal_error: null
+      });
+    } else {
+      await writeAnchorTelemetry(env, {
+        refusals_failed: (after.refusals_failed || 0) + 1,
+        last_refusal_status: res.status,
+        last_refusal_error: bodyText.slice(0, 200)
+      });
+    }
+  } catch (e) {
+    const after = await readAnchorTelemetry(env);
+    await writeAnchorTelemetry(env, {
+      refusals_failed: (after.refusals_failed || 0) + 1,
+      last_refusal_error: String(e).slice(0, 200)
+    });
+  } finally { clearTimeout(timer); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.7.3.1 · GET /anchor/status — dedicated diagnostics endpoint (additive)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Pings the microservice /status so you can see reachability in one call.
+// Diagnostic hints correlate HTTP status codes with the likely fix.
+
+async function handleAnchorStatus(req, env) {
+  const cfg = getAnchorConfig(env);
+  const telemetry = await readAnchorTelemetry(env);
+  let microservice = null;
+  if (cfg.url) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const t0 = Date.now();
+      const res = await fetch(cfg.url.replace(/\/+$/, "") + "/status", {
+        method: "GET", signal: ctrl.signal
+      });
+      const elapsed = Date.now() - t0;
+      const bodyText = (await res.text()).slice(0, 2000);
+      let bodyJson = null;
+      try { bodyJson = JSON.parse(bodyText); } catch (_) {}
+      microservice = {
+        reachable: true, status: res.status, elapsed_ms: elapsed,
+        body: bodyJson || bodyText
+      };
+    } catch (e) {
+      microservice = { reachable: false, error: String(e).slice(0, 200) };
+    } finally { clearTimeout(timer); }
+  }
+  return j(req, {
+    ok: cfg.enabled,
+    config: {
+      enabled: cfg.enabled,
+      service_url: cfg.url,
+      service_url_source_var: cfg.source_var,
+      token_configured: !!cfg.token,
+      timeout_ms: cfg.timeoutMs,
+      receipt_path: cfg.receipt_path,
+      refusal_path: cfg.refusal_path
+    },
+    contract: {
+      anchor: "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      cardiac_extensions: "0x5438854ead35dc6c873414f222725732f862dabe",
+      chain_id: 8453,
+      basescan: "https://basescan.org/address/0x12441662740836e9c72a4b758fe1c60c17ddd2d8"
+    },
+    telemetry,
+    microservice_status: microservice,
+    diagnostic_hint: !cfg.enabled
+      ? "anchor disabled: set ANCHOR_URL (or ANCHOR_SERVICE_URL) AND ANCHOR_QUEUE_TOKEN in Cloudflare dashboard; check ANCHOR_ENABLED is not 'false'"
+      : (telemetry.last_status === 401
+          ? "microservice returned 401 — ANCHOR_QUEUE_TOKEN on worker does not match microservice env value"
+          : (telemetry.last_status === 404
+              ? "microservice returned 404 — receipt endpoint path is wrong; set ANCHOR_RECEIPT_PATH dashboard var (default /anchor/receipt)"
+              : (telemetry.last_status === 422
+                  ? "microservice returned 422 — payload shape mismatch; check microservice OpenAPI at /docs"
+                  : (telemetry.last_error
+                      ? "last error: " + telemetry.last_error
+                      : "no errors recorded")))),
+    worker_version: WORKER_VERSION,
+    owner: "Ciprian Florin Pater",
+    timestamp: new Date().toISOString()
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2367,6 +2594,34 @@ async function handleStatus(req, env) {
       kv_bound: !!env.IDENTITY,
       note: "self-referential fingerprint: worker_version + contracts + endpoints + allowlist_hash + deontic_ruleset_hash"
     },
+    // v0.7.3.1 · anchor observability block (additive) ─────────────
+    anchor: await (async () => {
+      const cfg = getAnchorConfig(env);
+      const tel = await readAnchorTelemetry(env);
+      return {
+        enabled: cfg.enabled,
+        service_url: cfg.url,
+        service_url_source_var: cfg.source_var,
+        timeout_ms: cfg.timeoutMs,
+        token_configured: !!cfg.token,
+        receipt_path: cfg.receipt_path,
+        refusal_path: cfg.refusal_path,
+        anchor_contract: "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+        cardiac_extensions_contract: "0x5438854ead35dc6c873414f222725732f862dabe",
+        chain_id: 8453,
+        basescan: "https://basescan.org/address/0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+        telemetry: tel,
+        diagnostic: !cfg.enabled
+          ? (cfg.url ? "ANCHOR_QUEUE_TOKEN not set OR ANCHOR_ENABLED=false" : "ANCHOR_URL / ANCHOR_SERVICE_URL not set")
+          : (tel.last_status === 401 ? "microservice returned 401 — token mismatch"
+             : tel.last_status === 404 ? "microservice returned 404 — endpoint path mismatch"
+             : tel.last_status === 422 ? "microservice returned 422 — payload shape mismatch"
+             : tel.last_error ? ("last error: " + tel.last_error)
+             : "ok"),
+        streams_anchored: ["anchorReceipt (all accepted queries)", "anchorRefusal (REFUSED with Deontic violation)"],
+        dedicated_endpoint: "GET /anchor/status — pings microservice + full telemetry"
+      };
+    })(),
     seed_cron: {
       enabled: env.SEED_CRON_ENABLED === "true",
       cron: "0 * * * *",
@@ -2677,6 +2932,7 @@ export default {
                      url.pathname === "/audit/self" ||
                      url.pathname === "/identity/current" ||
                      url.pathname === "/identity/verify" ||
+                     url.pathname === "/anchor/status" ||
                      url.pathname === "/ecosystem" ||
                      (url.pathname === "/beacon" && req.method === "GET");
     if (!skipRate) {
@@ -2694,6 +2950,7 @@ export default {
         return welcomePage(req, env, bindings);
       }
       if (url.pathname === "/status")                                        return handleStatus(req, env);
+      if (url.pathname === "/anchor/status" && req.method === "GET")         return handleAnchorStatus(req, env);
       if (url.pathname === "/symbols" && req.method === "GET")               return handleSymbols(req);
       if (url.pathname === "/query" && req.method === "POST")                return handleQuery(req, env, ctx);
       if (url.pathname === "/beacon")                                        return handleBeacon(req, env);
