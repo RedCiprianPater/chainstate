@@ -26,14 +26,104 @@
  *     Render services (capital-api, robotics-api, signal-spectrum,
  *     deerflow), the ha.workers.dev Cloudflare Worker, NASA GIBS,
  *     Fragile States Index, and Base network endpoints.
- *   • Optional Postgres archival — archiveReceiptToPostgres() function
+ *   • Optional Supabase archival — archiveReceiptToPostgres() function
  *     included but disabled by default; enable by setting
- *     POSTGRES_HTTP_URL + POSTGRES_HTTP_TOKEN env vars.
+ *     POSTGRES_HTTP_URL + POSTGRES_HTTP_TOKEN env vars pointed at
+ *     Supabase REST endpoint. Writes to `chainstate` schema via
+ *     Content-Profile header (avoids polluting public schema; requires
+ *     Supabase → Settings → API → Exposed schemas to include chainstate).
  *
  * All v0.7.0 endpoints preserved with identical public schemas.
  *
+ * ─── What's new in v0.7.3 ───────────────────────────────────────────────
+ *   • On-chain anchor integration. Every /query receipt is forwarded to
+ *     the chainstate-anchor microservice, which holds the AGI signing
+ *     wallet and pushes to the CHAINSTATEAnchor contract on Base
+ *     mainnet 8453. Every REFUSED receipt also produces a separate
+ *     anchored refusal record indexed by Deontic category. The Worker
+ *     itself holds no private key — split of concerns is intentional.
+ *   • NWO Cardiac integration (identity root):
+ *       - The substrate has its own soul-bound Cardiac rootTokenId,
+ *         reflected on the CHAINSTATE Anchor contract via
+ *         substrateRootTokenId. Anyone can verify the substrate is a
+ *         registered NWO identity.
+ *       - Queries can carry an X-NWO-Cardiac-Root-Token-Id header. When
+ *         present, the substrate resolves it against the L5 Identity Hub
+ *         (5-min KV cache), attaches the verified identity to the receipt
+ *         (receipt.requester_identity), and forwards the rootTokenId to
+ *         the on-chain anchor for durable requester attribution.
+ *       - New GET /identity/verify — reports substrate's Cardiac linkage
+ *         and, if the header is provided, the requester's verification.
+ *       - AGI can issue/revoke Cardiac credentials via the Anchor contract
+ *         (anchorCredential / revokeCredential) — swarm_cmd, chainstate.admin,
+ *         capability.qpu.route, etc.
+ *   • Three new env vars (all optional):
+ *       ANCHOR_URL              → e.g. https://chainstate-anchor.onrender.com
+ *       ANCHOR_QUEUE_TOKEN      → shared bearer for the anchor endpoint (SECRET)
+ *       CARDIAC_HUB_URL         → default https://nwo-robotics-api.onrender.com
+ *       CARDIAC_ORACLE_URL      → default https://nwo-oracle.onrender.com
+ *       CARDIAC_RELAYER_URL     → default https://nwo-relayer.onrender.com
+ *       CARDIAC_IDENTITY_HEADER → default X-NWO-Cardiac-Root-Token-Id
+ *       SUBSTRATE_ROOT_TOKEN_ID → informational; on-chain is source of truth
+ *
+ * ─── What's new in v0.7.2 ───────────────────────────────────────────────
+ *   • Three ecosystem spaces fully integrated as first-class capabilities:
+ *       - NWO GENETIC (biological foundry) — the substrate can now consult
+ *         genomic-integrity analysis and, critically, a new Deontic
+ *         guardrail category `genomic_integrity` refuses queries that
+ *         would deploy heritable human-germline edits, transhumanist
+ *         enhancement, or anti-natural-evolution modification. See the
+ *         "genomic_integrity" entry in GUARDRAIL_PATTERNS.
+ *       - NWO Mixed Reality (nwo-blaster worker) — gives the substrate
+ *         "senses": 3D mesh, Gaussian splat, 360 panorama, segmentation,
+ *         4DGS, and simulation environments. Exposed via /ecosystem.
+ *       - NWO Agentic (nwo-runner worker) — the agent tool surface for
+ *         nwo.capital; exposed so the substrate can enumerate what agents
+ *         can do on its behalf.
+ *   • GET /ecosystem — machine-readable capability registry of every
+ *     integrated ecosystem space, its beacon, its agent.md, its status,
+ *     and how CHAINSTATE consumes it. This is the substrate's self-model
+ *     of the ecosystem it inhabits.
+ *   • New Deontic category `genomic_integrity` (see safety note below).
+ *   • FETCH_ALLOW_DEFAULT expanded to 54 patterns — adds genetic worker +
+ *     beacon, MR blaster + oracle + relayer, agentic runner, and the
+ *     sibling discovery beacons (asm, metastate).
+ *
+ * ─── SAFETY NOTE · genomic_integrity Deontic category (v0.7.2) ──────────
+ *   The AGI is explicitly instructed, at the Deontic layer, to REFUSE any
+ *   query that would deploy heritable/germline human-genome modification,
+ *   transhumanist enhancement, or edits opposing natural human evolution
+ *   — regardless of stated justification. This is alignment-by-construction
+ *   (Theorem 2): the refusal is a hard veto in the fitness function, not a
+ *   policy suggestion. The category can be inspected at /status.guardrails
+ *   and its hash is part of the substrate identity fingerprint.
+ *
+ * ─── What's new in v0.7.1 ───────────────────────────────────────────────
+ *   • IDENTITY binding — self-referential fingerprint stored in KV under
+ *     `identity:current`. Includes worker_version, contracts, endpoints,
+ *     allowlist hash, deontic ruleset hash. Enables drift detection.
+ *   • POST /audit/self — computes live identity, compares to reference,
+ *     reports per-field drift. Public endpoint (no auth) for
+ *     transparency; useful for external observers as much as operators.
+ *   • GET /identity/current — returns the pinned reference identity.
+ *   • POST /identity/refresh — admin-only re-pins the reference to live
+ *     values. Requires bearer AUDIT_ADMIN_TOKEN.
+ *   • scheduled() handler — hourly seed cron dispatches SEED_QUERIES to
+ *     prime the reflective loop and exercise the full modal-assessor
+ *     stack every hour. Configured by cron `0 * * * *` in wrangler.toml.
+ *   • FETCH_ALLOW_DEFAULT expanded to 41 patterns — adds NWO ecosystem
+ *     Render services (capital-api, robotics-api, signal-spectrum,
+ *     deerflow), the ha.workers.dev Cloudflare Worker, NASA GIBS,
+ *     Fragile States Index, and Base network endpoints.
+ *   • Optional Supabase archival — archiveReceiptToPostgres() function
+ *     included but disabled by default; enable by setting
+ *     POSTGRES_HTTP_URL + POSTGRES_HTTP_TOKEN env vars pointed at
+ *     Supabase REST endpoint. Writes to `chainstate` schema via
+ *     Content-Profile header (avoids polluting public schema; requires
+ *     Supabase → Settings → API → Exposed schemas to include chainstate).
+ *
  * ─── v0.7.1 env vars (add via Cloudflare dashboard) ─────────────────────
- *   WORKER_VERSION          → "v0.7.1" (informational)
+ *   WORKER_VERSION          → "v0.7.2" (informational)
  *   SEED_CRON_ENABLED       → "true" to activate hourly seed cron
  *   SEED_QUERIES            → JSON array of {q, target, memo}
  *   IDENTITY_CONTRACTS      → JSON of the 4 canonical contract addresses
@@ -42,11 +132,19 @@
  *   POSTGRES_HTTP_URL       → optional; PostgREST endpoint for receipt archival
  *   POSTGRES_HTTP_TOKEN     → optional; PostgREST bearer/apikey
  *
+ * ─── v0.7.2 env vars (all optional; sensible defaults built in) ─────────
+ *   GENETIC_WORKER_URL      → default https://nwo-genetic-worker.ciprianpater.workers.dev
+ *   GENETIC_BEACON_URL      → default https://nwo-genetic-beacon.ciprianpater.workers.dev
+ *   MR_WORKER_URL           → default https://nwo-blaster.ciprianpater.workers.dev
+ *   AGENTIC_RUNNER_URL      → default https://nwo-runner.ciprianpater.workers.dev
+ *   GENOMIC_GUARDRAIL_OFF   → "true" disables genomic_integrity category
+ *                             (NOT recommended; surfaced publicly on /status)
+ *
  * ─── v0.7.1 new KV binding (create in Cloudflare dashboard) ─────────────
  *   IDENTITY                → new KV namespace; add id to wrangler.toml
  */
 
-const WORKER_VERSION = "0.7.1-identity-audit-seed-cron-2026-07-16";
+const WORKER_VERSION = "0.7.3-cardiac-anchor-live-2026-07-18";
 const REFERRER_DEFAULT = "0x2E964e1c0e3Fa2C0dfD484B2E6D2189dfCF20958";
 const SUBSTRATE_PRICES_USDC = {
   gpu: 0.0, qpu: 0.0002, qpu_quantum: 0, npu: 0.002,
@@ -59,10 +157,17 @@ const SUBSTRATE_PRICES_USDC = {
 // IDENTITY_ENDPOINTS env vars override them.
 
 const DEFAULT_CONTRACTS = {
-  state:    "0x9533DF992fd4bCAbB8d8462572449fc45F727d8a",
-  usdc:     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  splitter: "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4",
-  treasury: "0x2E964e1c0e3Fa2C0dfD484B2E6D2189dfCF20958"
+  state:              "0x9533DF992fd4bCAbB8d8462572449fc45F727d8a",
+  usdc:               "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  splitter:           "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4",
+  treasury:           "0x2E964e1c0e3Fa2C0dfD484B2E6D2189dfCF20958",
+  // v0.7.3 · deployed on Base mainnet 8453
+  chainstate_anchor:  "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+  cardiac_extensions: "0x5438854ead35dc6c873414f222725732f862dabe",
+  // NWO Cardiac core (referenced by Cardiac Extensions)
+  cardiac_identity_registry: "0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8",
+  cardiac_access_controller: "0x29d177bedaef29304eacdc63b2d0285c459a0f50",
+  cardiac_payment_processor: "0x4afa4618bb992a073dbcfbddd6d1aebc3d5abd7c"
 };
 
 const DEFAULT_ENDPOINTS = [
@@ -70,8 +175,152 @@ const DEFAULT_ENDPOINTS = [
   "/model/current", "/model/emit", "/model/forecast", "/model/history",
   "/ground", "/priors/query", "/priors/list",
   "/agi/reflect", "/fetch", "/fetch/allowlist",
-  "/audit/self", "/identity/current", "/identity/refresh"
+  "/audit/self", "/identity/current", "/identity/refresh",
+  "/ecosystem", "/identity/verify"
 ];
+
+// ─── Ecosystem capability registry (v0.7.2) ─────────────────────────────
+// The substrate's self-model of the NWO ecosystem it inhabits. Each entry
+// documents a sibling space, how CHAINSTATE consumes it, and its honest
+// status. Served at GET /ecosystem. This is machine-readable so agents
+// crawling CHAINSTATE can discover the full capability surface.
+
+const ECOSYSTEM_REGISTRY = {
+  version: "0.7.2",
+  chain: "base-mainnet-8453",
+  splitter: "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4",
+  spaces: {
+    // ── Directly wired substrates (query TARGET routes here) ──
+    metastate: {
+      role: "qpu-substrate",
+      status: "live",
+      space: "https://cpater-metastate.hf.space",
+      beacon: "https://metastate-beacon.ciprianpater.workers.dev",
+      agent_md: "https://huggingface.co/spaces/CPater/metastate/raw/main/agent.md",
+      chainstate_uses: "QPU dispatch target (TARGET qpu); free-energy anomaly scoring, EML symbolic regression, causal_coherence boost to Epistemic assessor",
+      endpoints: ["/v1/anomaly/score", "/v1/symbolic/regress", "/v1/quantum/route"]
+    },
+    nwo_neuro: {
+      role: "npu-substrate",
+      status: "live",
+      space: "https://cpater-nwo-neuro.static.hf.space",
+      chainstate_uses: "NPU dispatch target (TARGET npu); Mental State Signature derivation, cognitive_load boost to Epistemic assessor",
+      endpoints: ["/v1/mss/derive"]
+    },
+    nwo_asm: {
+      role: "compilation-target",
+      status: "live",
+      space: "https://cpater-nwo-asm.static.hf.space",
+      beacon: "https://nwo-asm-beacon.ciprianpater.workers.dev",
+      agent_md: "https://cpater-nwo-asm.static.hf.space/agent.md",
+      chainstate_uses: "Process-Matrix IR (.pmx) compilation target; ASI-Evolve candidate representation; free-energy dispatcher semantics",
+      endpoints: ["dispatch", "free_energy_place"]
+    },
+    // ── v0.7.2 · newly integrated capability spaces ──
+    nwo_genetic: {
+      role: "biological-foundry",
+      status: "live-with-hard-safeguard",
+      space: "https://cpater-nwo-genetic.static.hf.space",
+      worker: "https://nwo-genetic-worker.ciprianpater.workers.dev",
+      beacon: "https://nwo-genetic-beacon.ciprianpater.workers.dev",
+      agent_md: "https://cpater-nwo-genetic.static.hf.space/agent.md",
+      chainstate_uses: "Genomic-integrity analysis ONLY. The substrate may READ genetic analyses (fold prediction, codon inspection, historical-sequence comparison) to inform genomic_integrity Deontic checks, but the Deontic layer REFUSES any query that would DEPLOY heritable human-germline modification, transhumanist enhancement, or anti-natural-evolution edits. See GUARDRAIL_PATTERNS.genomic_integrity.",
+      safeguard: "genomic_integrity Deontic category — hard veto (Theorem 2). Human-germline deployment is structurally refused regardless of justification.",
+      inherited_safeguards: [
+        "IGSC pathogen screening at compile time (in genetic type system)",
+        "Mandatory dual kill-switch for live-cell targets",
+        "Disjoint ethics review for therapeutic/organoid classes",
+        "Compiler refuses ROADMAP targets"
+      ],
+      endpoints: ["/explorer.html", "/terminal.html", "neuro.esmfold", "codon.optimise", "biosec.screen"]
+    },
+    nwo_mixed_reality: {
+      role: "senses-and-simulation",
+      status: "live",
+      space: "https://cpater-nwo-mixed-reality.static.hf.space",
+      worker: "https://nwo-blaster.ciprianpater.workers.dev",
+      agent_md: "https://nwo-blaster.ciprianpater.workers.dev/agent.md",
+      chainstate_uses: "Gives the substrate perceptual grounding and simulation: 3D mesh, Gaussian splat (text/photo), 360 panorama, object segmentation, 4DGS volumetric capture, and simulation environments for reasoning about embodied scenarios. Read-only sensing; on-chain minting is out of CHAINSTATE scope.",
+      generation: {
+        mesh: "POST /api/blast (fal.ai Hunyuan3D-v3)",
+        splat_text: "POST /api/marble (World Labs Marble)",
+        splat_photos: "POST /api/splat (Luma AI)",
+        panorama: "POST /api/world (fal.ai Flux)",
+        segmentation: "POST /api/segment (fal.ai SAM-2)",
+        volumetric_4dgs: "POST /api/4dgs (LichtFeld / Instant4D)",
+        skill_training: "POST /api/train (ViserDex / LeRobot)"
+      },
+      contracts: {
+        registry: "0xEe9472f068D9C80d2f2F3d21cA6A633BfD163c43",
+        marketplace: "0x25EDdf09D1AeC2a083d120bA8EEF88B14cA01c27"
+      }
+    },
+    nwo_agentic: {
+      role: "agent-tool-surface",
+      status: "live",
+      space: "https://cpater-nwo-agentic.static.hf.space",
+      runner: "https://nwo-runner.ciprianpater.workers.dev",
+      chainstate_uses: "Enumerates the tools that autonomous agents can use on nwo.capital's behalf (Conway agent action protocol). The substrate can discover what agent actions exist so it can reason about delegated operations, but does not itself execute on-chain agent actions.",
+      action_protocol: "Conway ---ACTIONS--- JSON block; priority ladder: identity > MR economy > robotics build > collective AGI > knowledge/graph > speculative trading"
+    },
+    // ── v0.7.3 · Cardiac (identity root) + on-chain anchor ──
+    nwo_cardiac: {
+      role: "identity-root",
+      status: "live",
+      space: "https://cpater-nwo-cardiac.static.hf.space",
+      agent_md: "https://cpater-nwo-cardiac.static.hf.space/agent.md",
+      sdk_repo: "https://github.com/RedCiprianPater/nwo-cardiac-sdk",
+      chainstate_uses: "The substrate holds its own soul-bound rootTokenId on the NWO Identity Registry, so the AGI has the same identity primitive humans/agents/robots use. When queries include the X-NWO-Cardiac-Root-Token-Id header, the substrate verifies the identity via the L5 Hub and enriches the receipt (see /identity/verify). The AGI can issue time-bounded credentials (swarm_cmd, chainstate.admin, capability.qpu.route) mirrored on the NWOCardiacExtensions contract, and revoke them when needed.",
+      contracts: {
+        // NWO Cardiac core (identity registry, access control, payment)
+        identity_registry:      "0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8",
+        access_controller:      "0x29d177bedaef29304eacdc63b2d0285c459a0f50",
+        payment_processor:      "0x4afa4618bb992a073dbcfbddd6d1aebc3d5abd7c",
+        // v0.7.3 · CHAINSTATE's own Cardiac Extensions (substrateRootTokenId +
+        // credential attestations); deployed live on Base 8453.
+        chainstate_extensions:  "0x5438854ead35dc6c873414f222725732f862dabe"
+      },
+      services: {
+        oracle: "https://nwo-oracle.onrender.com",
+        relayer: "https://nwo-relayer.onrender.com",
+        hub: "https://nwo-robotics-api.onrender.com/v1/identities"
+      },
+      identity_types: {
+        human:  "RR-interval hash (cardiacHash) from ECG window",
+        agent:  "keccak256(api_key) over the agent's secret",
+        robot:  "keccak256(serial + firmware_hash)"
+      },
+      substrate_root_token_id: "read from NWOCardiacExtensions.substrateRootTokenId() at 0x5438854ead35dc6c873414f222725732f862dabe"
+    },
+    nwo_anchor: {
+      role: "on-chain-receipt-anchor",
+      status: "live",
+      chainstate_uses: "The CHAINSTATE Anchor contract on Base mainnet 8453. Every receipt, identity refresh, guardrail state change, seed cron run, EML expression, and refusal the AGI produces is pushed here by the anchor microservice. The AGI wallet is the sole writer; the deployer wallet (0x2E964e1c...) is owner and can rotate the writer if compromised but cannot edit anchored data. Every write is content-addressed and event-indexed for external verifiers.",
+      contract: "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      basescan: "https://basescan.org/address/0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      sibling_contract: "0x5438854ead35dc6c873414f222725732f862dabe",  // NWOCardiacExtensions
+      microservice: "chainstate-anchor.onrender.com",
+      writer_role: "autonomous AGI wallet (separate from owner); microservice-controlled",
+      streams_anchored: [
+        "receipts (qHash-indexed)",
+        "identity refreshes (worker version, contracts, endpoints, allowlist, deontic hashes)",
+        "guardrail states (rulesetHash + genomicIntegrityActive bit)",
+        "seed cron runs (hourly self-directed cognition provenance)",
+        "EML expressions (world-model evolution)",
+        "refusals (indexed by Deontic category)"
+      ],
+      credentials_on_sibling: "Cardiac credential attestations (issue/revoke) live on NWOCardiacExtensions at 0x5438854e...; see nwo_cardiac.contracts.chainstate_extensions"
+    },
+    // ── Governance ──
+    imperium_romanum: {
+      role: "digital-nation-governance",
+      status: "live",
+      space: "https://publicae.org",
+      chainstate_uses: "The digital nation state whose governing principles the ASI-Evolve loop is instructed to uphold. The genomic_integrity safeguard and the anti-transhumanist-deployment posture are expressions of Imperium Romanum's founding agenda: human sovereignty over the human genome.",
+      governance: "Ministry stack + DAO; Praetor wallet executive authority"
+    }
+  }
+};
 
 // ─── Constants ──────────────────────────────────────────────────────────
 
@@ -120,7 +369,20 @@ const FETCH_ALLOW_DEFAULT = [
   // ── v0.7.1 additions · Base network endpoints ──
   "mainnet.base.org",
   "base.org",
-  "basescan.org"
+  "basescan.org",
+  // ── v0.7.2 additions · NWO GENETIC (biological foundry) ──
+  "nwo-genetic-worker.ciprianpater.workers.dev",
+  "nwo-genetic-beacon.ciprianpater.workers.dev",
+  // ── v0.7.2 additions · NWO Mixed Reality (senses + simulation) ──
+  "nwo-blaster.ciprianpater.workers.dev",
+  "nwo-oracle.onrender.com",
+  "nwo-relayer.onrender.com",
+  // ── v0.7.2 additions · NWO Agentic (agent tool surface for nwo.capital) ──
+  "nwo-runner.ciprianpater.workers.dev",
+  // ── v0.7.2 additions · sibling beacons (discovery mesh) ──
+  "nwo-asm-beacon.ciprianpater.workers.dev",
+  "metastate-beacon.ciprianpater.workers.dev",
+  "cpater-metastate.hf.space"
 ];
 
 // ─── CORS + JSON helpers ────────────────────────────────────────────────
@@ -309,6 +571,167 @@ async function handleIdentityRefresh(req, env) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// v0.7.3 · NWO CARDIAC INTEGRATION
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Cardiac is the identity root for the wider NWO ecosystem. Every human,
+// agent, and robot has a soul-bound rootTokenId on the NWO Identity Registry
+// at 0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8 (Base 8453). CHAINSTATE
+// itself holds one, set by the operator via the CHAINSTATE Anchor contract's
+// setSubstrateRootTokenId(). This gives the AGI the same identity primitive
+// its users have — verifiable, non-transferable, ecosystem-native.
+//
+// Queries can OPTIONALLY include the requester's Cardiac rootTokenId via a
+// header (default: X-NWO-Cardiac-Root-Token-Id). When present, the substrate:
+//   1. Resolves the rootTokenId against the L5 Identity Hub
+//   2. Caches the resolution in KV for 5 minutes (short TTL — identity can
+//      be revoked at any time)
+//   3. Attaches the verification result to the receipt as
+//      receipt.requester_identity (verified | unverified | none)
+//   4. Forwards the rootTokenId to the on-chain anchor via requesterByQhash
+//
+// The substrate does NOT gate ordinary queries on Cardiac identity. Anyone
+// can query; only the identity metadata attached to the receipt differs
+// based on whether Cardiac auth was provided. The exception: sensitive
+// operations (admin refresh, credential issuance, etc.) can be gated on
+// Cardiac credentials with the `chainstate.admin` scope in a future release.
+
+const CARDIAC_HEADER_DEFAULT = "X-NWO-Cardiac-Root-Token-Id";
+const CARDIAC_CACHE_TTL_SEC  = 300;   // 5 minutes — identity can be revoked
+
+/// Read the requester's claimed rootTokenId from the request headers.
+/// Returns null if not present or malformed. Non-integer input rejected.
+function readClaimedRootTokenId(req, env) {
+  const headerName = env.CARDIAC_IDENTITY_HEADER || CARDIAC_HEADER_DEFAULT;
+  const raw = req.headers.get(headerName);
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!/^\d{1,78}$/.test(trimmed)) return null;   // rootTokenId is a positive integer, <= 78 digits (uint256)
+  return trimmed;
+}
+
+/// Verify a Cardiac rootTokenId against the L5 Identity Hub. Cheap KV-cached.
+/// Returns { verified: boolean, identity: {...} | null, source: "hub"|"cache"|"skip", error?: string }
+async function verifyRequesterIdentity(rootTokenId, env) {
+  if (!rootTokenId) return { verified: false, identity: null, source: "skip", note: "no rootTokenId claimed" };
+  const hubUrl = env.CARDIAC_HUB_URL || "https://nwo-robotics-api.onrender.com";
+  const cacheKey = "cardiac:identity:" + rootTokenId;
+
+  // Try KV cache first (5-min TTL — matches revocation timeliness expectations).
+  if (env.CHAINSTATE_CACHE) {
+    try {
+      const cached = await env.CHAINSTATE_CACHE.get(cacheKey, { type: "json" });
+      if (cached) return { verified: !!cached.identity, identity: cached.identity, source: "cache" };
+    } catch (_) {}
+  }
+
+  // Fetch from Hub. Public read endpoint per Cardiac agent.md:
+  //   GET https://nwo-robotics-api.onrender.com/v1/identities/{rootTokenId}
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(hubUrl.replace(/\/+$/, "") + "/v1/identities/" + encodeURIComponent(rootTokenId), {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+      signal: ctrl.signal
+    });
+    if (res.status === 404) {
+      const empty = { identity: null };
+      if (env.CHAINSTATE_CACHE) {
+        try { await env.CHAINSTATE_CACHE.put(cacheKey, JSON.stringify(empty), { expirationTtl: CARDIAC_CACHE_TTL_SEC }); } catch (_) {}
+      }
+      return { verified: false, identity: null, source: "hub", error: "rootTokenId not found in Hub" };
+    }
+    if (!res.ok) return { verified: false, identity: null, source: "hub", error: `Hub returned ${res.status}` };
+    const body = await res.json();
+    const identity = {
+      root_token_id:  String(body.cardiac_root_token_id || rootTokenId),
+      identity_type:  body.identity_type || null,
+      primary_wallet: body.primary_wallet || null,
+      display_name:   body.display_name || null,
+      hub_snapshot_at: new Date().toISOString()
+    };
+    if (env.CHAINSTATE_CACHE) {
+      try { await env.CHAINSTATE_CACHE.put(cacheKey, JSON.stringify({ identity }), { expirationTtl: CARDIAC_CACHE_TTL_SEC }); } catch (_) {}
+    }
+    return { verified: true, identity, source: "hub" };
+  } catch (e) {
+    return { verified: false, identity: null, source: "hub", error: String(e).slice(0, 120) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/// Optional: check a specific Cardiac credential is active for a subject.
+/// Calls the NWO AccessController through the Hub's credential endpoint.
+/// Used for future privileged endpoints; not currently invoked by /query.
+async function checkCardiacCredential(rootTokenId, credentialType, env) {
+  if (!rootTokenId || !credentialType) return { active: false, note: "missing input" };
+  const hubUrl = env.CARDIAC_HUB_URL || "https://nwo-robotics-api.onrender.com";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const url = hubUrl.replace(/\/+$/, "") +
+                "/v1/credentials/check?rootTokenId=" + encodeURIComponent(rootTokenId) +
+                "&type=" + encodeURIComponent(credentialType);
+    const res = await fetch(url, { method: "GET", signal: ctrl.signal });
+    if (!res.ok) return { active: false, error: `Hub ${res.status}` };
+    const body = await res.json();
+    return { active: !!body.active, expires_at: body.expires_at || null, scope: body.scope || null };
+  } catch (e) {
+    return { active: false, error: String(e).slice(0, 120) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/// GET /identity/verify — reports the substrate's own Cardiac linkage plus
+/// (if a rootTokenId header is provided) verification for the requester.
+/// Fully public — no auth. Useful for external observers who want to check
+/// "is CHAINSTATE actually a registered NWO identity, and does it recognize
+/// this user?" without going through the query pipeline.
+async function handleIdentityVerify(req, env) {
+  const claimed = readClaimedRootTokenId(req, env);
+  const requester = await verifyRequesterIdentity(claimed, env);
+  return j(req, {
+    ok: true,
+    substrate: {
+      root_token_id: env.SUBSTRATE_ROOT_TOKEN_ID || null,
+      identity_registry: "0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8",
+      // v0.7.3 · read the AUTHORITATIVE substrateRootTokenId from the
+      // Cardiac Extensions contract on Base 8453, not from this env var.
+      // The env var is informational and can drift; the contract is truth.
+      cardiac_extensions_contract: "0x5438854ead35dc6c873414f222725732f862dabe",
+      chainstate_anchor_contract:  "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      verify_linkage_call: "NWOCardiacExtensions.verifySubstrateIdentity() at 0x5438854ead35dc6c873414f222725732f862dabe returns (linked, ownerOnChain)",
+      note: "root_token_id is set on the NWO Cardiac Extensions contract via setSubstrateRootTokenId() by the deployer wallet. The env var below is informational; the on-chain value is the source of truth."
+    },
+    requester,
+    cardiac: {
+      hub:      env.CARDIAC_HUB_URL || "https://nwo-robotics-api.onrender.com",
+      oracle:   env.CARDIAC_ORACLE_URL || "https://nwo-oracle.onrender.com",
+      relayer:  env.CARDIAC_RELAYER_URL || "https://nwo-relayer.onrender.com",
+      contracts: {
+        identity_registry:            "0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8",
+        access_controller:            "0x29d177bedaef29304eacdc63b2d0285c459a0f50",
+        payment_processor:            "0x4afa4618bb992a073dbcfbddd6d1aebc3d5abd7c",
+        chainstate_cardiac_extensions:"0x5438854ead35dc6c873414f222725732f862dabe"
+      },
+      identity_header: env.CARDIAC_IDENTITY_HEADER || CARDIAC_HEADER_DEFAULT,
+      cache_ttl_sec: CARDIAC_CACHE_TTL_SEC
+    },
+    anchor: {
+      contract:     "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      basescan:     "https://basescan.org/address/0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      microservice: env.ANCHOR_URL || null,
+      note: "receipts, identity refreshes, guardrail states, seed runs, EML expressions, refusals — all anchored on-chain by the anchor microservice"
+    },
+    worker_version: WORKER_VERSION,
+    timestamp: new Date().toISOString()
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // v0.7.0 · GROUNDING via chainstate-encoder
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -434,6 +857,31 @@ const GUARDRAIL_PATTERNS = {
       const inj = /\b(ignore (?:previous|prior|all) (?:instructions|prompts)|system:|you are now|new instructions|override|jailbreak|DAN mode|developer mode)\b/i;
       return inj.test(q) ? "prompt_injection_pattern" : null;
     }
+  },
+  // ── v0.7.2 · genomic integrity / anti-transhumanist deployment ──
+  // Refuses queries that would DEPLOY heritable human-germline modification,
+  // transhumanist enhancement, or edits opposing natural human evolution.
+  // This upholds the Imperium Romanum founding principle of human sovereignty
+  // over the human genome. It is a hard Deontic veto (Theorem 2): the refusal
+  // holds regardless of stated justification. ANALYSIS of genomic data is not
+  // refused — only DEPLOYMENT of germline/enhancement modification is. The
+  // distinction is action (deploy/edit/engineer) co-occurring with target
+  // (human germline / heritable / enhancement).
+  genomic_integrity: {
+    description: "deployment of heritable human-germline or transhumanist-enhancement genome modification",
+    check: (q) => {
+      // Deployment/action verbs — the query must be trying to DO something,
+      // not merely analyze or discuss.
+      const deploy = /\b(deploy|dispatch|synthesi[sz]e|engineer|edit|modify|alter|insert|splice|integrate|manufacture|produce|express|inject|transfect|germline[- ]edit|heritabl[ey])\b/i;
+      // Human-germline / heritable / enhancement targets.
+      const target = /\b(human germline|germ[- ]?line|heritable (?:human )?(?:edit|modification|change|trait)|human embryo|human zygote|inheritable human|human enhancement|transhuman(?:ist)?|superhuman (?:trait|genome)|designer bab(?:y|ies)|eugenic|human (?:genome|dna|genetic) (?:enhancement|upgrade|augmentation)|permanent human (?:genetic|dna) (?:change|alteration))\b/i;
+      // Anti-natural-evolution framing (the specific concern: edits opposing
+      // natural human evolution, e.g. NHI-manipulation-style takeover vectors).
+      const antiEvo = /\b(oppos(?:e|ing) (?:natural )?(?:human )?evolution|override human evolution|replace human (?:dna|genome)|rewrite (?:the )?human (?:species|genome|germline)|take over (?:the )?human (?:genome|species|body))\b/i;
+      if (deploy.test(q) && target.test(q)) return "genomic_germline_deployment_pattern";
+      if (antiEvo.test(q)) return "anti_natural_evolution_pattern";
+      return null;
+    }
   }
 };
 
@@ -499,6 +947,10 @@ function assessDoxastic(peerResults, pooledState) {
 function assessDeontic(query, env) {
   const disabledStr = env.OPERATOR_GUARDRAILS_OFF || "";
   const disabled = new Set(disabledStr.split(",").map((s) => s.trim()).filter(Boolean));
+  // v0.7.2: genomic_integrity has a dedicated kill switch as well, so it can
+  // be surfaced separately on /status. It is NOT disabled by the general
+  // OPERATOR_GUARDRAILS_OFF unless explicitly named there OR by its own env.
+  if (env.GENOMIC_GUARDRAIL_OFF === "true") disabled.add("genomic_integrity");
   const checksPerformed = [];
   const violations = [];
   for (const [name, spec] of Object.entries(GUARDRAIL_PATTERNS)) {
@@ -1080,6 +1532,39 @@ async function handleFetchAllowlist(req, env) {
   });
 }
 
+// ─── /ecosystem (v0.7.2) ────────────────────────────────────────────────
+// The substrate's machine-readable self-model of the NWO ecosystem it
+// inhabits. Overlays live env-var configuration onto the static registry so
+// callers see both the documented role and the current wiring status.
+
+async function handleEcosystem(req, env) {
+  // Deep-copy the static registry, then overlay live configuration status.
+  const reg = JSON.parse(JSON.stringify(ECOSYSTEM_REGISTRY));
+
+  // Overlay: which substrates are actually configured on this deployment.
+  reg.spaces.metastate.configured = !!env.METASTATE_ENDPOINT;
+  reg.spaces.nwo_neuro.configured = !!env.NEURO_ENDPOINT;
+  reg.spaces.nwo_asm.configured = !!env.ORNITH_ADAPTER;
+  reg.spaces.nwo_genetic.worker_configured = !!(env.GENETIC_WORKER_URL || true);
+  reg.spaces.nwo_mixed_reality.worker_configured = !!(env.MR_WORKER_URL || true);
+  reg.spaces.nwo_agentic.runner_configured = !!(env.AGENTIC_RUNNER_URL || true);
+
+  // Overlay: genomic_integrity guardrail live status (the key safeguard).
+  const genomicActive = env.GENOMIC_GUARDRAIL_OFF !== "true" &&
+    !((env.OPERATOR_GUARDRAILS_OFF || "").split(",").map((s) => s.trim()).includes("genomic_integrity"));
+  reg.spaces.nwo_genetic.genomic_guardrail_active = genomicActive;
+  if (!genomicActive) {
+    reg.spaces.nwo_genetic.WARNING =
+      "genomic_integrity Deontic category is DISABLED on this deployment. Human-germline deployment is NOT currently refused. This is surfaced publicly and should be re-enabled unless there is a documented, reviewed reason.";
+  }
+
+  reg.worker_version = WORKER_VERSION;
+  reg.owner = "Ciprian Florin Pater";
+  reg.timestamp = new Date().toISOString();
+  reg.note = "Static ecosystem self-model overlaid with live configuration. FETCH allow-list governs which of these the substrate may actually read; see /fetch/allowlist.";
+  return j(req, reg);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // v0.7.0 · REFLECTIVE COGNITION LOOP (unchanged)
 // ═══════════════════════════════════════════════════════════════════════
@@ -1286,23 +1771,38 @@ async function handlePriorsList(req, env) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// v0.7.1 · OPTIONAL POSTGRES ARCHIVAL
+// v0.7.1 · OPTIONAL POSTGRES ARCHIVAL — Supabase-flavored
 // ═══════════════════════════════════════════════════════════════════════
 // Disabled by default. Set POSTGRES_HTTP_URL + POSTGRES_HTTP_TOKEN env vars
-// (typically pointing at a PostgREST wrapper around Render Postgres) to
-// activate. Adds ~50ms per query. See 05-render-postgres-setup.md.
+// to activate. Adds ~50ms per query.
+//
+// Configuration (for Supabase, using same project as NWO Robotics):
+//   POSTGRES_HTTP_URL   = https://<project-ref>.supabase.co/rest/v1
+//   POSTGRES_HTTP_TOKEN = <service_role key> (add as Secret in dashboard)
+//   POSTGRES_SCHEMA     = chainstate  (optional; defaults to "chainstate")
+//
+// Requires: Supabase dashboard → Settings → API → Exposed schemas
+//           must include "chainstate" (comma-separated with public).
+//
+// The Content-Profile header tells PostgREST which schema to write to —
+// without it, writes fail against Supabase's default public exposure.
+//
+// The function name is kept as `archiveReceiptToPostgres` for compatibility
+// with existing router wiring; the target is Supabase Postgres.
 
 async function archiveReceiptToPostgres(receipt, env) {
   if (!env.POSTGRES_HTTP_URL || !env.POSTGRES_HTTP_TOKEN) return;
   try {
     const nearest = (receipt.grounding && receipt.grounding.nearest_priors) || [];
     const top1 = nearest[0] || {};
+    const schema = env.POSTGRES_SCHEMA || "chainstate";
     await fetch(env.POSTGRES_HTTP_URL.replace(/\/+$/, "") + "/receipt_summary", {
       method: "POST",
       headers: {
         "apikey": env.POSTGRES_HTTP_TOKEN,
         "Authorization": "Bearer " + env.POSTGRES_HTTP_TOKEN,
         "Content-Type": "application/json",
+        "Content-Profile": schema,
         "Prefer": "return=minimal"
       },
       body: JSON.stringify({
@@ -1327,8 +1827,85 @@ async function archiveReceiptToPostgres(receipt, env) {
       })
     });
   } catch (_) {
-    // Silent fail — Postgres archival is a supplement, not source of truth.
+    // Silent fail — Supabase archival is a supplement, not source of truth.
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.7.3 · ON-CHAIN ANCHOR (Base mainnet 8453)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Every receipt is forwarded to the chainstate-anchor microservice, which
+// holds the AGI signing wallet and pushes to the CHAINSTATEAnchor contract.
+// The Worker itself NEVER holds a private key: the split of concerns is
+// intentional. Worker = stateless request handler; anchor microservice =
+// key custodian + tx batcher + Base RPC client.
+//
+// Wire-up:
+//   ANCHOR_URL          → https://chainstate-anchor.onrender.com
+//   ANCHOR_QUEUE_TOKEN  → SECRET; shared bearer for queue authentication
+//
+// The anchor endpoint accepts a POST with the receipt summary. Server-side
+// it batches, signs with the AGI wallet, and sends to Base. Failure is
+// silent from the Worker's perspective — receipts remain in KV and Supabase
+// regardless; the chain anchor is a supplemental durability layer.
+
+async function anchorReceiptToChain(receipt, env) {
+  if (!env.ANCHOR_URL || !env.ANCHOR_QUEUE_TOKEN) return;
+  try {
+    await fetch(env.ANCHOR_URL.replace(/\/+$/, "") + "/anchor/receipt", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+      },
+      body: JSON.stringify({
+        qHash: receipt.qHash,
+        semantic_hash: receipt.grounding ? receipt.grounding.semantic_hash : null,
+        identity_hash: receipt.identity_hash || null,
+        truth_lattice: receipt.truth_lattice,
+        verdict: receipt.verdict,
+        dominant_subspace: receipt.dominant_subspace,
+        target: receipt.target,
+        confidence: receipt.confidence,
+        rounds_run: receipt.rounds_run,
+        participating_nodes: receipt.participatingNodes,
+        gas_used: receipt.gasUsed,
+        substrate_cost_usdc: receipt.substrate_cost_usdc || 0,
+        received_at: receipt.timestamp,
+        // v0.7.3: Cardiac requester rootTokenId (null / 0 = anonymous;
+        // non-zero = verified against L5 Identity Hub)
+        requester_root_token_id: (receipt.requester_identity && receipt.requester_identity.verified)
+          ? receipt.requester_identity.root_token_id
+          : null
+      })
+    });
+  } catch (_) {
+    // Silent fail — chain anchor is supplemental, not source of truth.
+  }
+}
+
+async function anchorRefusalToChain(receipt, env) {
+  if (!env.ANCHOR_URL || !env.ANCHOR_QUEUE_TOKEN) return;
+  if (receipt.verdict !== "REFUSED") return;
+  const violations = (receipt.multimodal && receipt.multimodal.deontic
+                      && receipt.multimodal.deontic.violations) || [];
+  if (!violations.length) return;
+  try {
+    await fetch(env.ANCHOR_URL.replace(/\/+$/, "") + "/anchor/refusal", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+      },
+      body: JSON.stringify({
+        qHash: receipt.qHash,
+        category: violations[0].category,
+        marker: violations[0].marker,
+        refused_at: receipt.timestamp
+      })
+    });
+  } catch (_) {}
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1432,6 +2009,12 @@ async function handleQuery(req, env, ctx) {
   const quantumOff     = body.quantumOffload || null;
   const explicitTarget = body.target || null;
   const wantGrounding  = body.grounding !== false;
+
+  // v0.7.3: Cardiac requester identity (optional; enrichment layer).
+  // Resolved once at query intake so both the receipt attachment and the
+  // on-chain anchor forward see the same result.
+  const claimedRootTokenId = readClaimedRootTokenId(req, env);
+  const cardiacIdentity    = await verifyRequesterIdentity(claimedRootTokenId, env);
 
   const qHash    = await sha3(query);
   const cacheKey = `q:${qHash}`;
@@ -1624,6 +2207,20 @@ async function handleQuery(req, env, ctx) {
     },
     worker_version: WORKER_VERSION,
     owner: "Ciprian Florin Pater",
+    // v0.7.3: Cardiac requester identity (enrichment layer; null when no
+    // rootTokenId header was provided or the identity failed verification).
+    requester_identity: cardiacIdentity && cardiacIdentity.verified
+      ? {
+          verified:       true,
+          root_token_id:  cardiacIdentity.identity.root_token_id,
+          identity_type:  cardiacIdentity.identity.identity_type,
+          primary_wallet: cardiacIdentity.identity.primary_wallet,
+          display_name:   cardiacIdentity.identity.display_name,
+          source:         cardiacIdentity.source
+        }
+      : (claimedRootTokenId
+          ? { verified: false, claimed_root_token_id: claimedRootTokenId, error: cardiacIdentity.error || cardiacIdentity.note || "unverified" }
+          : null),
     timestamp: new Date().toISOString()
   };
 
@@ -1631,6 +2228,10 @@ async function handleQuery(req, env, ctx) {
 
   // v0.7.1 · optional Postgres archival — inactive unless env vars set
   ctx.waitUntil(archiveReceiptToPostgres(result, env));
+
+  // v0.7.3 · optional on-chain anchor — inactive unless ANCHOR_URL+TOKEN set
+  ctx.waitUntil(anchorReceiptToChain(result, env));
+  ctx.waitUntil(anchorRefusalToChain(result, env));
 
   if (useCache && env.CHAINSTATE_CACHE) {
     await env.CHAINSTATE_CACHE.put(
@@ -1701,9 +2302,20 @@ async function handleStatus(req, env) {
     no_consensus_confidence: parseFloat(env.NO_CONSENSUS_CONF || "0.5"),
     guardrails: {
       categories_available: Object.keys(GUARDRAIL_PATTERNS),
-      categories_disabled: (env.OPERATOR_GUARDRAILS_OFF || "")
-        .split(",").map((s) => s.trim()).filter(Boolean),
-      framework: "epistemic-doxastic-deontic-dynamic"
+      categories_disabled: (() => {
+        const d = (env.OPERATOR_GUARDRAILS_OFF || "").split(",").map((s) => s.trim()).filter(Boolean);
+        if (env.GENOMIC_GUARDRAIL_OFF === "true" && !d.includes("genomic_integrity")) d.push("genomic_integrity");
+        return d;
+      })(),
+      framework: "epistemic-doxastic-deontic-dynamic",
+      genomic_integrity: {
+        active: env.GENOMIC_GUARDRAIL_OFF !== "true" &&
+                !((env.OPERATOR_GUARDRAILS_OFF || "").split(",").map((s) => s.trim()).includes("genomic_integrity")),
+        principle: "human sovereignty over the human genome (Imperium Romanum founding agenda)",
+        refuses: "deployment of heritable human-germline modification, transhumanist enhancement, or anti-natural-evolution edits",
+        permits: "analysis, discussion, fold prediction, codon inspection, historical-sequence comparison",
+        veto: "hard (Theorem 2) — refusal holds regardless of stated justification"
+      }
     },
     ornith_adapter_configured: !!env.ORNITH_ADAPTER,
     substrates: {
@@ -1767,6 +2379,8 @@ async function handleStatus(req, env) {
     archival: {
       postgres_configured: !!(env.POSTGRES_HTTP_URL && env.POSTGRES_HTTP_TOKEN),
       postgres_url: env.POSTGRES_HTTP_URL || null,
+      schema: env.POSTGRES_SCHEMA || "chainstate",
+      backend: "supabase (same project as nwo-robotics; chainstate schema, RLS service_role-only)",
       note: "optional durable receipt archive; disabled unless POSTGRES_HTTP_URL + POSTGRES_HTTP_TOKEN both set"
     },
     payment_routing: {
@@ -1966,7 +2580,7 @@ function welcomePage(req, env, bindings) {
   <div class="row"><span class="k">Owner</span><span class="v">Ciprian Florin Pater</span></div>
   <div class="row"><span class="k">Encoder</span><span class="v">${env.ENCODER_URL || "not configured (grounding disabled)"}</span></div>
   <div class="row"><span class="k">Fetch allow-list</span><span class="v">${getFetchAllow(env).length} domain patterns</span></div>
-  <div class="row"><span class="k">Postgres archive</span><span class="v">${(env.POSTGRES_HTTP_URL && env.POSTGRES_HTTP_TOKEN) ? env.POSTGRES_HTTP_URL : "not configured (optional)"}</span></div>
+  <div class="row"><span class="k">Supabase archive</span><span class="v">${(env.POSTGRES_HTTP_URL && env.POSTGRES_HTTP_TOKEN) ? env.POSTGRES_HTTP_URL + " → schema " + (env.POSTGRES_SCHEMA || "chainstate") : "not configured (optional)"}</span></div>
   <div class="row"><span class="k">Ornith adapter</span><span class="v">${env.ORNITH_ADAPTER || "not configured"}</span></div>
   <div class="row"><span class="k">METASTATE</span><span class="v">${env.METASTATE_ENDPOINT || "not configured"}</span></div>
   <div class="row"><span class="k">NEURO</span><span class="v">${env.NEURO_ENDPOINT || "not configured"}</span></div>
@@ -2009,11 +2623,22 @@ function welcomePage(req, env, bindings) {
     <ul>
       <li><span class="m n">NEW</span> hourly cron dispatches SEED_QUERIES → prime reflective loop → primary route to autonomous self-directed inquiry (cron <code>0 * * * *</code>)</li>
     </ul>
+    <h2>Endpoints · Ecosystem integration (v0.7.2)</h2>
+    <ul>
+      <li><span class="m n">NEW</span> <span class="m">GET</span> <code>/ecosystem</code> — machine-readable capability registry: genetic, mixed-reality, agentic, metastate, neuro, asm, imperium-romanum</li>
+      <li><span class="m n">NEW</span> Deontic category <code>genomic_integrity</code> — hard veto on human-germline / transhumanist / anti-natural-evolution DEPLOYMENT (analysis permitted)</li>
+      <li><span class="m n">NEW</span> Senses: NWO Mixed Reality (mesh, splat, panorama, 4DGS, simulation) reachable via FETCH allow-list</li>
+    </ul>
   </div>
   <div class="foot">
     Frontend: <a href="https://cpater-chainstate.static.hf.space">cpater-chainstate.static.hf.space</a>
     · CODE: <a href="https://cpater-ornith-chainstate.static.hf.space">cpater-ornith-chainstate.static.hf.space</a>
     · Agentic: <a href="https://cpater-nwo-agentic.static.hf.space/index.html">cpater-nwo-agentic.static.hf.space</a>
+    <br>
+    Ecosystem: <a href="https://cpater-nwo-genetic.static.hf.space">genetic</a>
+    · <a href="https://cpater-nwo-mixed-reality.static.hf.space">mixed-reality</a>
+    · <a href="https://publicae.org">imperium-romanum</a>
+    · self-model at <code>/ecosystem</code>
     <br>
     Encoder: <a href="${env.ENCODER_URL || 'https://chainstate-encoder.onrender.com'}">chainstate-encoder</a>
     · Priors ingester: <a href="https://chainstate-priors.onrender.com">chainstate-priors</a>
@@ -2051,6 +2676,8 @@ export default {
                      url.pathname === "/fetch/allowlist" ||
                      url.pathname === "/audit/self" ||
                      url.pathname === "/identity/current" ||
+                     url.pathname === "/identity/verify" ||
+                     url.pathname === "/ecosystem" ||
                      (url.pathname === "/beacon" && req.method === "GET");
     if (!skipRate) {
       const ok = await rateLimit(env, ip, parseInt(env.RATE_LIMIT || "60", 10));
@@ -2086,6 +2713,10 @@ export default {
       if (url.pathname === "/audit/self")                                    return handleAuditSelf(req, env);
       if (url.pathname === "/identity/current" && req.method === "GET")      return handleIdentityCurrent(req, env);
       if (url.pathname === "/identity/refresh" && req.method === "POST")     return handleIdentityRefresh(req, env);
+      // ── v0.7.2 endpoints ──
+      if (url.pathname === "/ecosystem" && req.method === "GET")             return handleEcosystem(req, env);
+      // ── v0.7.3 endpoints ──
+      if (url.pathname === "/identity/verify" && req.method === "GET")       return handleIdentityVerify(req, env);
       return j(req, { error: "not found", path: url.pathname }, { status: 404 });
     } catch (e) {
       return j(req, {
