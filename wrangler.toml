@@ -1,13 +1,23 @@
 # =============================================================================
 # chainstate-worker · Cloudflare Worker configuration
 # =============================================================================
-# v0.7.3 · adds: chainstate-anchor microservice integration, NWO Cardiac
-#                Extensions credential contract, on-chain receipt anchoring,
-#                extended DEFAULT_CONTRACTS (Anchor + Cardiac Extensions),
-#                encoder + priors microservice references, Cardiac Oracle +
-#                Relayer references, ANCHOR_QUEUE_TOKEN bearer plumbing.
+# v0.7.5 · adds: Theory of Mind Attribution (Paper V) — mentalistic axis M,
+#                Ontological Delta Ledger (Theorem 7), Self-Attribution
+#                Vector v_self (§6.3), Enactivist grounding channel
+#                (Theorem 9), Hypothesis-generation loop (§6.5), GWT
+#                broadcast-back (§7.1), IIT Φ_approx (§7.2), HOT reflexive
+#                receipt fields (§7.3), AST attention schema (§7.4), PP/FEP
+#                explicit free energy (§7.5), Iida AOM/PIM memory typing
+#                (§7.6). All gated on TOM_ATTRIBUTION_ENABLED=1.
+#
+# v0.7.4 · adds: TESSERA integration (7th subspace "geo"), Cambridge
+#                Earth-observation embeddings 2017-2025, deterministic
+#                128→4,096 projection, nature_tokenization hard-veto
+#                Deontic category (no kill switch).
 #
 # Previous milestones
+#   v0.7.3 · chainstate-anchor microservice, NWO Cardiac Extensions,
+#            on-chain receipt anchoring
 #   v0.7.2 · GENETIC + MIXED REALITY substrate references, Theorem 4 sensing
 #   v0.7.1 · IDENTITY KV namespace, hourly seed cron, self-audit endpoints,
 #            identity binding, expanded FETCH_ALLOWLIST, SEED_QUERIES,
@@ -55,6 +65,18 @@ id      = "06b51dc6cb4647d09735851d55fb6a9d"
 binding = "GROUNDING"
 id      = "PASTE_GROUNDING_KV_ID_HERE"
 
+# v0.7.5 · Self-attribution probe accumulator (Paper V §6.3).
+# Holds probe outcomes across ~30 days for v_self extraction per epoch.
+# Create via:
+#   wrangler kv:namespace create chainstate-tom-probes
+# Or Cloudflare dashboard → Workers & Pages → KV → Create namespace
+# Name: chainstate-tom-probes
+# Then paste the resulting ID below. Leaving the placeholder is harmless —
+# self-attribution probing degrades gracefully to a no-op when unbound.
+[[kv_namespaces]]
+binding = "TOM_PROBES"
+id      = "PASTE_TOM_PROBES_KV_ID_HERE"
+
 
 # -----------------------------------------------------------------------------
 # Cron triggers
@@ -69,7 +91,11 @@ crons = [
   "0 * * * *",
   # v0.7.3 · nightly priors refresh at 03:15 UTC — pulls from
   # chainstate-priors microservice, refreshes GROUNDING cache
-  "15 3 * * *"
+  "15 3 * * *",
+  # v0.7.5 · 6-hourly ontology delta computation + anchor (§6.2 · Theorem 7)
+  "0 */6 * * *",
+  # v0.7.5 · daily self-attribution vector extraction at 00:15 UTC (§6.3)
+  "15 0 * * *"
 ]
 
 
@@ -99,7 +125,7 @@ FETCH_TIMEOUT_MS      = "15000"
 FETCH_STRIP_MAX_BYTES = "20000"
 
 # --- v0.7.3 · on-chain anchor + Cardiac Extensions ---
-WORKER_VERSION        = "0.7.3-cardiac-anchor-live-2026-07-18"
+WORKER_VERSION        = "0.7.5-tom-attribution-multi-basis-2026-08-03"
 ANCHOR_ENABLED        = "true"
 ANCHOR_SERVICE_URL    = "https://chainstate-anchor.onrender.com"
 ANCHOR_TIMEOUT_MS     = "10000"     # bearer POST budget before falling back
@@ -122,6 +148,46 @@ CONTRACT_CARDIAC_PAYMENT    = "0x4afa4618bb992a073dbcfbddd6d1aebc3d5abd7c"
 CONTRACT_STATE_TOKEN        = "0x9533DF992fd4bCAbB8d8462572449fc45F727d8a"
 CONTRACT_USDC               = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 CONTRACT_METASTATE_SPLITTER = "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4"
+
+# --- v0.7.4 · TESSERA symbolic-spatial integration ---
+TESSERA_SERVICE_URL   = "https://chainstate-tessera-service.onrender.com"
+TESSERA_TIMEOUT_MS    = "12000"
+
+# --- v0.7.5 · Theory of Mind Attribution · Paper V ---
+# MASTER SWITCH — leave "0" until Phase α of the deployment plan is ready
+# (see README_v075.md). When "1", every /query receipt gains the new
+# mentalistic + higher_order + attention_schema + free_energy blocks and
+# the four new anchor streams become active on their crons.
+TOM_ATTRIBUTION_ENABLED       = "0"
+
+# Baseline anthropocentric ratio for Theorem 6 drift detection. Measure
+# these values over ~1000 receipts after first enabling TOM_ATTRIBUTION,
+# then update these vars to lock the deployment baseline. Suppression
+# flag σ(q) triggers when α(q) > alpha_base + 3 * std_base.
+TOM_BASELINE_ANTHRO_RATIO     = "0.55"
+TOM_BASELINE_ANTHRO_STD       = "0.15"
+
+# Ontological Delta Ledger cadence (blocks per delta anchor).
+ONTOLOGY_DELTA_WINDOW         = "1024"
+
+# Self-Attribution Vector epoch (blocks per v_self extraction).
+SELF_ATTR_EPOCH_BLOCKS        = "8192"
+
+# Enactivist grounding threshold θ_enact. Feedback with error > θ_enact
+# anchors an ENACTIVIST_EVENT and triggers reputation update.
+ENACTIVIST_THRESHOLD          = "0.35"
+
+# Hypothesis-generation loop divergence threshold ε_div. Corpus-vs-measurement
+# divergences > ε_div trigger HYPOTHETICAL verdict.
+HYPOTHESIS_DIVERGENCE_EPSILON = "0.25"
+
+# GWT broadcast-back adaptation rate β (§7.1).
+BROADCAST_BACK_BETA           = "0.10"
+
+# PP/FEP free-energy channel weights (§7.5).
+F_WEIGHT_TEXT                 = "0.5"
+F_WEIGHT_GEO                  = "0.3"
+F_WEIGHT_ENACT                = "0.2"
 
 
 # -----------------------------------------------------------------------------
@@ -146,7 +212,7 @@ CONTRACT_METASTATE_SPLITTER = "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4"
 #   AUDIT_ADMIN_TOKEN       (SECRET — gates POST /identity/refresh admin
 #                            endpoint on the WORKER only, not the microservice)
 #
-# v0.7.3 (new)
+# v0.7.3 (in place)
 #   ANCHOR_QUEUE_TOKEN      (SECRET — bearer for POST to chainstate-anchor;
 #                            same value must be set in the anchor microservice
 #                            Render environment, no drift allowed)
@@ -162,6 +228,15 @@ CONTRACT_METASTATE_SPLITTER = "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4"
 #                            default "queue" · what to do when
 #                            ANCHOR_SERVICE_URL is unreachable within
 #                            ANCHOR_TIMEOUT_MS)
+#
+# v0.7.5 (new · dashboard-only secrets)
+#   ENACTIVIST_BEARER       (SECRET · optional but recommended · shared bearer
+#                            token that NWO Robotics and NWO NEURO must send
+#                            when POSTing to /enactivist/feedback. If unset,
+#                            the endpoint is open to any caller. Generate:
+#                              openssl rand -hex 32
+#                            Same value must go on nwo-robotics-api and
+#                            nwo-neuro-api Render environments.)
 # -----------------------------------------------------------------------------
 
 
@@ -186,34 +261,64 @@ CONTRACT_METASTATE_SPLITTER = "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4"
 
 
 # =============================================================================
-# Deployment checklist · v0.7.3
+# Deployment checklist · v0.7.5 (Paper V)
 # =============================================================================
 #
-# ONE-TIME
-#   1. Create GROUNDING KV namespace (dashboard) and paste its id above.
-#   2. Deploy chainstate-anchor microservice to Render (see
-#      /chainstate-anchor-service/render.yaml). Note the public URL.
-#   3. Generate ANCHOR_QUEUE_TOKEN as a random 32-byte hex string:
-#        openssl rand -hex 32
-#      Paste identical value into:
-#        - Cloudflare dashboard (SECRET, this worker)
-#        - Render environment (SECRET, chainstate-anchor)
-#   4. Note the substrate's own rootTokenId after the AGI's cardiac_register
-#      call to the Identity Registry, and paste into AGI_CARDIAC_ROOT_TOKEN_ID.
+# ONE-TIME (if migrating from v0.7.3/v0.7.4)
+#   1. Create TOM_PROBES KV namespace and paste its id above.
+#        wrangler kv:namespace create chainstate-tom-probes
+#      Or via dashboard.
+#   2. Run migration_v075.sql once in Supabase SQL Editor of the NWO Robotics
+#      project. Creates tables tom_anchor_stream + tom_probe_log and views
+#      tom_stream_summary + tom_enactivist_recent. Idempotent; safe to re-run.
+#   3. Push updated anchor-main.py (renamed to main.py) to the chainstate-anchor
+#      repo. Render auto-deploys. Verify /health.
+#   4. Generate ENACTIVIST_BEARER (32-byte hex) and set as SECRET in:
+#        - Cloudflare Worker dashboard
+#        - nwo-robotics-api Render env
+#        - nwo-neuro-api Render env
+#   5. Build /enactivist/emit adapter on nwo-robotics-api and nwo-neuro-api
+#      per NWO_ROBOTICS_ENACTIVIST_ADAPTER.md.
+#
+# PHASED ROLLOUT
+#   Phase α (Steps 1-5): Deploy worker. Leave TOM_ATTRIBUTION_ENABLED=0.
+#           Verify /status = 0.7.5-tom-attribution-multi-basis-2026-08-03.
+#           Set TOM_ATTRIBUTION_ENABLED=1 after 24h stable v0.7.4-behavior
+#           observation. Then wait 24-48h to measure baseline via
+#           GET /mentalistic/audit; update TOM_BASELINE_ANTHRO_RATIO/STD.
+#
+#   Phase β (Steps 6-7): New crons active (6-hourly ontology, daily
+#           self-attribution). Verify first ONTOLOGY_DELTA row appears in
+#           tom_stream_summary. Verify GET /ontology/delta returns latest.
+#
+#   Phase γ (Steps 8-10): Enactivist channel + Φ_approx anchor + broadcast-back.
+#           Requires NWO Robotics + NEURO adapters live. Verify prediction-error
+#           feedback flows end-to-end and Φ_approx samples appear in
+#           INTEGRATION_PHI stream.
+#
+#   Phase δ (Step 11): Hypothesis-generation loop. Verify POST /query/hypothesize
+#           returns HYPOTHETICAL receipts on divergent queries.
 #
 # PER-DEPLOY
 #   1. wrangler deploy
 #   2. curl https://chainstate-worker.ciprianpater.workers.dev/status | jq
-#      → expect .worker_version = "0.7.3-cardiac-anchor-live-2026-07-18"
+#      → expect .worker_version = "0.7.5-tom-attribution-multi-basis-2026-08-03"
 #      → expect .anchor.enabled = true
 #      → expect .anchor.reachable = true
-#   3. curl https://chainstate-worker.ciprianpater.workers.dev/identity/verify \
+#   3. curl https://chainstate-worker.ciprianpater.workers.dev/tom/version | jq
+#      → expect .tom_enabled matches TOM_ATTRIBUTION_ENABLED
+#      → expect the 9 v0.7.5 endpoints listed
+#   4. curl https://chainstate-worker.ciprianpater.workers.dev/identity/verify \
 #      → expect all v0.7.3 contract addresses present and unmodified
 #
 # ROLLBACK
-#   Set ANCHOR_ENABLED=false in dashboard → wrangler deploy. All /query calls
-#   still complete and return receipts, but on_chain.status = "disabled" in
-#   the receipt. No data loss; queued receipts persist in GROUNDING KV.
+#   Fastest:   Set TOM_ATTRIBUTION_ENABLED=false in dashboard → deploy.
+#              All v0.7.5 receipt enrichment stops immediately; worker reverts
+#              to v0.7.4 behavior. New endpoints return {tom_enabled: false}.
+#              Zero data loss; Supabase v0.7.5 tables continue to exist but
+#              accumulate no new rows.
+#   Full:      Redeploy v0.7.4 edge-worker.js. All prior functionality preserved.
+#              Supabase migrations are additive; no rollback needed.
 #
 # =============================================================================
 # END
