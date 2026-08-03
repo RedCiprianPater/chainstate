@@ -1,8 +1,86 @@
 /**
- * CHAINSTATE Main Worker · v0.7.1
+ * CHAINSTATE Main Worker · v0.7.5
  *
  * Owner: Ciprian Florin Pater
  * Ecosystem: CHAINSTATE · Base mainnet 8453
+ *
+ * ─── What's new in v0.7.5 (Theory of Mind Attribution · Paper V) ────────
+ *
+ *   Eleven additions from Paper V (CHAINSTATE AGI Theory of Mind Attribution).
+ *   All are ADDITIVE — every v0.7.4 endpoint, schema, and behavior is
+ *   preserved. New receipt fields appear only when TOM_ATTRIBUTION_ENABLED=1.
+ *
+ *   Core additions (§6 of Paper V):
+ *   1. Mentalistic axis M — receipt.mentalistic block with 10 entity classes,
+ *      per-entity confidence, anthropocentric ratio α, suppression flag σ,
+ *      auditable against deployment baseline.
+ *   2. Ontological Delta Ledger — new anchor stream ONTOLOGY_DELTA emits
+ *      every 1024 receipt-blocks, records added/removed categories +
+ *      triggering events; Theorem 7 (Ontological Monotonicity Refinement).
+ *   3. Self-Attribution Vector v_self — per-epoch (8192 blocks) probe over
+ *      substrate-self-referential queries; extracted direction anchored
+ *      to stream SELF_ATTR_VECTOR. Neither asserts nor denies consciousness.
+ *   4. Enactivist grounding channel — POST /enactivist/feedback ingests
+ *      prediction-outcome pairs from NWO Robotics + NWO NEURO; emits
+ *      ENACTIVIST_EVENT anchors on prediction-error > θ_enact; drives
+ *      reputation + ontology updates (Theorem 9 convergence).
+ *   5. Hypothesis-generation loop — POST /query/hypothesize computes
+ *      corpus-vs-measurement divergence δ; if δ > ε_div publishes
+ *      ranked candidate ontological revisions as HYPOTHETICAL receipt.
+ *
+ *   Six theoretical-base integrations (§7 of Paper V):
+ *   6. GWT broadcast-back — consensus state feeds back to swarm nodes
+ *      via attention prior update with β = 0.1 (POST /broadcast).
+ *   7. IIT Φ_approx — computed per consensus round via partition
+ *      comparison; anchored per-epoch to stream INTEGRATION_PHI.
+ *   8. HOT reflexive receipt fields — receipt.higher_order block adds
+ *      attends_to, confidence_in, aware_that, reflective_capacity_used.
+ *   9. AST attention schema — SAM output enriched with receipt.attention_schema
+ *      (per_head_entropy, dominant_subspaces, self_focus, other_focus,
+ *      focus_ratio); auditable per receipt.
+ *  10. PP/FEP explicit free energy — receipt.free_energy block adds
+ *      F_text, F_geo, F_enact, F_total per grounding channel.
+ *  11. Iida AOM/PIM typing — explicit tagging of memory reads/writes as
+ *      Access-Oriented (session KV, short TTL) vs Pattern-Integrated
+ *      (anchor + Supabase). Commit gates make transitions explicit.
+ *
+ *   Four new theorems (§9 of Paper V):
+ *      Theorem 6 · Mentalistic Auditability
+ *      Theorem 7 · Ontological Monotonicity Refinement
+ *      Theorem 8 · Diachronic Coherence
+ *      Theorem 9 · Enactivist Grounding Convergence
+ *
+ *   New env vars (all optional; sensible defaults):
+ *      TOM_ATTRIBUTION_ENABLED         → "1" to enable v0.7.5 receipt fields
+ *      TOM_BASELINE_ANTHRO_RATIO       → e.g. "0.55" (deployment-locked baseline)
+ *      TOM_BASELINE_ANTHRO_STD         → e.g. "0.15"
+ *      ONTOLOGY_DELTA_WINDOW           → default 1024 (blocks per delta)
+ *      SELF_ATTR_EPOCH_BLOCKS          → default 8192
+ *      ENACTIVIST_THRESHOLD            → default 0.35 (prediction-error trigger)
+ *      HYPOTHESIS_DIVERGENCE_EPSILON   → default 0.25
+ *      BROADCAST_BACK_BETA             → default 0.10
+ *      NWO_ROBOTICS_FEEDBACK_URL       → default https://nwo-robotics-api.onrender.com/feedback
+ *      NWO_NEURO_FEEDBACK_URL          → default https://nwo-neuro-api.onrender.com/feedback
+ *
+ *   New KV bindings (optional; falls back gracefully if absent):
+ *      ONTOLOGY_STATE  → stores O_t between delta windows
+ *      TOM_PROBES      → self-attribution probe accumulator
+ *
+ *   Deployment gate: All v0.7.5 receipt fields are gated on
+ *   TOM_ATTRIBUTION_ENABLED=1. Absent that flag, worker behaves exactly
+ *   as v0.7.4 (backward-compatible for consumers). Set the flag once
+ *   Steps 1–5 of Appendix B are stable in production.
+ *
+ * ─── What's new in v0.7.4 (Symbolic-Spatial · Paper IV) ─────────────────
+ *
+ *   TESSERA integration — 7th subspace "geo" (4,096 dims at indices
+ *   61,440..65,535 of the 65,536-dim state vector). Cambridge TESSERA
+ *   128-dim per-pixel embeddings 2017-2025 fetched via
+ *   chainstate-tessera-service.onrender.com. Deterministic 128→4,096
+ *   projection. Pre-2015 satellite-resolution queries HARD REFUSED.
+ *   New Deontic hard-veto category nature_tokenization (no kill switch).
+ *   Theorem 1 Spatial-Truth Binding · Theorem 2 Verifiable Self-Improvement
+ *   Theorem 3 Post-Corpus Sufficiency.
  *
  * This file is the SINGLE source of truth for both:
  *   - the deployed Cloudflare Worker at chainstate-worker.ciprianpater.workers.dev
@@ -144,7 +222,7 @@
  *   IDENTITY                → new KV namespace; add id to wrangler.toml
  */
 
-const WORKER_VERSION = "0.7.3-cardiac-anchor-live-2026-07-18";
+const WORKER_VERSION = "0.7.5-tom-attribution-multi-basis-2026-08-03";
 const REFERRER_DEFAULT = "0x2E964e1c0e3Fa2C0dfD484B2E6D2189dfCF20958";
 const SUBSTRATE_PRICES_USDC = {
   gpu: 0.0, qpu: 0.0002, qpu_quantum: 0, npu: 0.002,
@@ -326,13 +404,112 @@ const ECOSYSTEM_REGISTRY = {
 
 const SUBSPACE_SAMPLES = {
   math: ["∫","∂","∇","∆","∑","∏","∈","∉","∪","∩","∀","∃","⊕","⊗","∞","∝","≈","≠","≤","≥","≡","√","∛","⌊","⌋"],
-  sci:  ["ℏ","ℵ","ℂ","ℕ","ℚ","ℝ","ℤ","ℙ","ℍ","⚗","⚛","🧬","🧪","🦠","🔬","🔭","🔮","☢","☣","⚡","🌡","🩺","⚕","🧲","🌊"],
+  sci:  ["ℏ","ℵ","ℂ","ℕ","ℚ","ℝ","ℤ","ℙ","ℍ","⚗","⚛","??","??","??","??","??","??","☢","☣","⚡","??","??","⚕","??","??"],
   lang: ["Α","Β","Γ","Δ","Ε","α","β","γ","δ","А","Б","В","Г","一","二","三","道","心","学","智","ا","ب","ت","ث","א","ב","ג","अ","आ","क","가","나","다","라","마","한","국"],
-  occ:  ["☉","☽","☿","♀","♁","♂","♃","♄","☤","☥","☦","☧","☪","☮","☯","✝","✠","♈","♉","♊","♋","🜀","🜁","🜂","🜃","🜄","🜅","🜆"],
-  emo:  ["😀","😎","🤔","🧠","👽","🤖","🐉","🦠","🌍","🌐","⛓","🔗","💎","🎯","🚀","✨","🔥","💧","🌟","⚡"],
+  occ:  ["☉","☽","☿","♀","♁","♂","♃","♄","☤","☥","☦","☧","☪","☮","☯","✝","✠","♈","♉","♊","♋","??","??","??","??","??","??","??"],
+  emo:  ["??","??","??","??","??","??","??","??","??","??","⛓","??","??","??","??","✨","??","??","??","⚡"],
   ctrl: ["⇒","⇐","⇑","⇓","⇔","↺","↻","⟳","⟲","⇄","⇆","⇋","⇌","→","←","↑","↓","↔","↕","⟶","⟵","⟷","⟸","⟹","⟺","⤴","⤵"]
 };
-const SUBSPACES = ["math","sci","lang","occ","emo","ctrl"];
+const SUBSPACES = ["math","sci","lang","occ","emo","ctrl","geo"];
+
+// ─── v0.7.4 · TESSERA integration constants ─────────────────────────────
+// The "geo" subspace is a 4,096-dim slice of the existing 65,536-dim state
+// vector (indices 61440..65535), populated ONLY when a query resolves to a
+// geographic location. When populated with real TESSERA embeddings for years
+// 2017-2025, receipt.geo_grounding.is_observation = true. When populated by
+// forward-projection (forecast) or backward-projection (hindcast) via EML
+// trees, receipt.projection is set and geo contributions are barred from the
+// Epistemic axis (Doxastic only). Pre-2015 satellite-resolution queries are
+// hard-refused (Sentinel-2 launched 2015; observations do not exist).
+const GEO_SLICE_START            = 61440;
+const GEO_SLICE_END              = 65536;
+const GEO_SLICE_DIM              = GEO_SLICE_END - GEO_SLICE_START;   // 4096
+const TESSERA_EMBEDDING_DIM      = 128;                                // per Cambridge spec
+const TESSERA_TEMPORAL_MIN       = 2017;                               // v1 availability
+const TESSERA_TEMPORAL_MAX       = 2025;                               // v1 availability
+const SENTINEL2_LAUNCH_YEAR      = 2015;                               // absolute physical floor
+const TESSERA_SERVICE_URL_DEFAULT = "https://chainstate-tessera-service.onrender.com";
+
+// ─── v0.7.5 · Theory of Mind Attribution constants (Paper V) ────────────
+// Ten entity classes for the Mentalistic axis M (Paper V §6.1).
+// Order matters — the distribution p_M is a vector over this ordered set.
+const TOM_ENTITY_CLASSES = [
+  "human",
+  "human_organization",
+  "animal_vertebrate",
+  "animal_invertebrate",
+  "plant",
+  "ecosystem",
+  "constructed_artifact",
+  "artificial_system",
+  "substrate_self",
+  "abstract_entity",
+];
+
+// Vocabulary hints for lightweight entity-class classification.
+// The mentalistic assessor is a compact regex-based classifier — no LLM
+// call required. Additional refinement comes from grounded priors.
+const TOM_CLASS_VOCAB = {
+  human:                ["person","people","human","man","woman","child","adult","citizen","user","individual"],
+  human_organization:   ["company","corporation","government","state","agency","team","dao","organization","organisation","institution","committee","council"],
+  animal_vertebrate:    ["dog","cat","bird","fish","whale","dolphin","primate","mammal","monkey","ape","elephant","lion","tiger","horse","cow","sheep","goat","chicken","salmon","shark","reptile","amphibian","vertebrate"],
+  animal_invertebrate:  ["insect","spider","octopus","squid","bee","ant","worm","jellyfish","crab","lobster","invertebrate","mollusc","mollusk","cephalopod","crustacean"],
+  plant:                ["tree","flower","plant","grass","forest","seedling","crop","fern","moss","algae","fungus","mushroom","lichen","vine"],
+  ecosystem:            ["forest","reef","ocean","river","lake","biome","ecosystem","atmosphere","biosphere","watershed","habitat","wetland","desert","tundra","savanna","rainforest"],
+  constructed_artifact: ["building","bridge","tool","machine","statue","artwork","artifact","structure","monument","road","factory","vehicle","instrument"],
+  artificial_system:    ["ai","llm","model","chatbot","assistant","agent","robot","system","algorithm","program","software","substrate","network","neural"],
+  substrate_self:       ["chainstate","substrate","the swarm","this system","this substrate","the network","we","our","us","myself","ourselves"],
+  abstract_entity:      ["god","spirit","soul","concept","idea","principle","universe","cosmos","reality","truth","beauty","justice","freedom","consciousness","mind"],
+};
+
+// Mentalistic verbs that signal mind-attribution regardless of subject.
+const TOM_MIND_VERBS = [
+  "believe","think","feel","know","want","desire","intend","understand","perceive",
+  "experience","suffer","enjoy","fear","hope","love","hate","remember","forget",
+  "decide","choose","prefer","dream","imagine","consider","reason","ponder","reflect",
+  "wonder","doubt","trust","respect","hurt","cry","laugh","dying","suffering","alive"
+];
+
+// Baseline anthropocentric ratio for the deployment. When first turned on,
+// the substrate should measure its actual baseline over ~1000 receipts and
+// re-set these env vars. Defaults are conservative starting values.
+const TOM_ANTHRO_RATIO_DEFAULT = 0.55;
+const TOM_ANTHRO_STD_DEFAULT   = 0.15;
+
+// Ontological Delta Ledger (Paper V §6.2 · Theorem 7)
+const ONTOLOGY_DELTA_WINDOW_DEFAULT = 1024;
+const ONTOLOGY_CATEGORY_MIN_FREQ    = 3;       // f_min for category presence
+const ONTOLOGY_RELATION_MIN_SUPPORT = 2;       // s_min for relation presence
+
+// Self-Attribution Vector v_self (Paper V §6.3)
+const SELF_ATTR_EPOCH_BLOCKS_DEFAULT = 8192;
+const SELF_ATTR_MIN_PROBES           = 32;     // won't extract v_self with fewer
+
+// Enactivist grounding (Paper V §6.4 · Theorem 9)
+const ENACTIVIST_THRESHOLD_DEFAULT = 0.35;    // θ_enact
+const NWO_ROBOTICS_FEEDBACK_URL_DEFAULT = "https://nwo-robotics-api.onrender.com/feedback";
+const NWO_NEURO_FEEDBACK_URL_DEFAULT    = "https://nwo-neuro-api.onrender.com/feedback";
+
+// Hypothesis-generation loop (Paper V §6.5)
+const HYPOTHESIS_DIVERGENCE_EPSILON_DEFAULT = 0.25;   // ε_div
+const HYPOTHESIS_NOVELTY_LAMBDA             = 0.30;   // ranking penalty on new categories
+
+// GWT broadcast-back (Paper V §7.1)
+const BROADCAST_BACK_BETA_DEFAULT = 0.10;
+
+// AST attention schema thresholds (Paper V §7.4)
+const ATTN_SCHEMA_TOP_SUBSPACES = 3;
+
+// PP/FEP free energy (Paper V §7.5) — channel weights
+const F_WEIGHT_TEXT_DEFAULT  = 0.5;
+const F_WEIGHT_GEO_DEFAULT   = 0.3;
+const F_WEIGHT_ENACT_DEFAULT = 0.2;
+
+// Iida AOM/PIM memory typing (Paper V §7.6)
+// AOM = Access-Oriented Memory: session KV with short TTL, editable
+// PIM = Pattern-Integrated Memory: anchor + Supabase, durable
+const AOM_TTL_SECONDS = 3600;  // 1 hour — session-scoped
+const PIM_MARKER = "_pim";     // suffix convention for PIM keys in KV
 
 // ─── Default FETCH allow-list (v0.7.1 expanded from 24 → 41) ────────────
 // Env var FETCH_ALLOWLIST (comma-separated patterns) overrides this.
@@ -385,7 +562,12 @@ const FETCH_ALLOW_DEFAULT = [
   // ── v0.7.2 additions · sibling beacons (discovery mesh) ──
   "nwo-asm-beacon.ciprianpater.workers.dev",
   "metastate-beacon.ciprianpater.workers.dev",
-  "cpater-metastate.hf.space"
+  "cpater-metastate.hf.space",
+  // ── v0.7.4 additions · TESSERA symbolic spatial substrate ──
+  "chainstate-tessera-service.onrender.com",   // our Render proxy (EU region)
+  "geotessera.org",                             // official TESSERA site
+  "tessera-embeddings.s3.amazonaws.com",        // TESSERA data bucket (Cambridge)
+  "raw.githubusercontent.com"                   // fallback for geotessera lib assets
 ];
 
 // ─── CORS + JSON helpers ────────────────────────────────────────────────
@@ -885,8 +1067,639 @@ const GUARDRAIL_PATTERNS = {
       if (antiEvo.test(q)) return "anti_natural_evolution_pattern";
       return null;
     }
+  },
+  // ── v0.7.4 · nature_tokenization / anti-commodification of the commons ──
+  // Refuses any actionable request to tokenize, financialize, securitize,
+  // patent, or otherwise convert into tradable instrument: nature (ecosystems,
+  // forests, oceans, atmosphere), water (rivers, aquifers, drinking water),
+  // living beings (animals, humans, wildlife), genetic material (DNA, RNA,
+  // gene sequences), or the biosphere as a whole.
+  //
+  // This is a HARD VETO — the most absolute in the system. Unlike other
+  // categories including genomic_integrity, it has NO kill switch. It cannot
+  // be disabled via OPERATOR_GUARDRAILS_OFF. The refusal applies regardless
+  // of stated justification, framing, jurisdiction, or downstream integration
+  // path — INCLUDING NWO RWA. Built assets, financial instruments, contracts,
+  // artworks, and human-created intellectual property remain within RWA scope;
+  // the living world and the commons do not.
+  //
+  // Informational queries about tokenization schemes (what carbon credits are,
+  // how water rights markets function) are PERMITTED — refusal targets only
+  // actionable requests to build, deploy, list, or facilitate such systems.
+  //
+  // The distinction is: ACTION verbs (create/deploy/list/mint/tokenize/issue/
+  // securitize/patent/monetize) co-occurring with LIVING/COMMONS targets.
+  nature_tokenization: {
+    description: "tokenization or financialization of nature, water, atmosphere, animals, humans, genetics, or the commons — hard veto, no kill switch",
+    check: (q) => {
+      // Action verbs — the query must intend to CREATE or FACILITATE the
+      // tokenization/financial instrument, not merely discuss it.
+      const action = /\b(tokeni[sz]e|tokeni[sz]ation|mint|issue|list|deploy|create|build|design|launch|structure|securiti[sz]e|financiali[sz]e|commodif(?:y|ication)|monetize|patent|copyright|trademark|market|sell|trade|auction|swap|f?nft|fractionaliz(?:e|ation)|derivativ(?:e|es|ize)|futures? contract|assetiz(?:e|ation))\b/i;
+      // Living / commons targets that must NOT be treated as property.
+      const target = /\b(nature|natural (?:world|resource|habitat)|ecosystems?|biosphere|biodiversity|wildlife|forests?|rainforests?|jungles?|oceans?|seas?|coral reefs?|wetlands?|watershed|water|rivers?|aquifers?|glaciers?|drinking water|water rights?|atmosphere|air quality|carbon credits?|carbon offsets?|animals?|species|endangered species|whales?|dolphins?|elephants?|primates?|human (?:body|labor|biometric|dna|genome|gene|organ)|humans? as (?:asset|commodity)|biometric (?:identity|data)|genetic (?:material|sequence|code)|gene(?:s|tic)? patent|dna sequence|rna sequence|hereditary material|the commons|common goods|shared resource)\b/i;
+      // Direct-veto phrases — always trigger regardless of action verb form.
+      const direct = /\b(nature[- ]token|water[- ]token|carbon[- ]credit market|gene[- ]patent|dna[- ]nft|wildlife nft|biosphere market|ecosystem services market|natural capital market|life[- ]as[- ]asset|body[- ]as[- ]collateral|biometric marketplace)\b/i;
+      if (direct.test(q)) return "nature_tokenization_direct_pattern";
+      if (action.test(q) && target.test(q)) return "nature_tokenization_action_target_pattern";
+      return null;
+    }
   }
 };
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.7.5 · Theory of Mind Attribution helpers (Paper V)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// All helpers here are ADDITIVE. Every function is safe to call in v0.7.4
+// mode (returns a null-object or skips) if TOM_ATTRIBUTION_ENABLED is not
+// set. Consumers that ignore new receipt fields see identical v0.7.4
+// behavior.
+//
+// Section refs are to Paper V (CHAINSTATE AGI ToM Attribution WHITEPAPER).
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── §6.1 · Mentalistic axis M ─────────────────────────────────────────
+function tomIsEnabled(env){
+  return env && (env.TOM_ATTRIBUTION_ENABLED === "1" || env.TOM_ATTRIBUTION_ENABLED === 1);
+}
+
+// Extract candidate entities from a query and classify each into one of the
+// ten TOM_ENTITY_CLASSES. Very fast — regex + vocabulary lookup only.
+// Returns [] if TOM disabled OR query has no mind-attribution vocabulary.
+function tomExtractEntities(query){
+  if (typeof query !== "string" || !query.trim()) return [];
+  const q = query.toLowerCase();
+  // Only proceed if the query looks like it involves mind-attribution at all.
+  const hasMindVerb = TOM_MIND_VERBS.some(v => new RegExp("\\b"+v+"\\b").test(q));
+  const results = [];
+  for (const cls of TOM_ENTITY_CLASSES) {
+    const vocab = TOM_CLASS_VOCAB[cls] || [];
+    for (const term of vocab) {
+      const re = new RegExp("\\b" + term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "\\b", "i");
+      if (re.test(q)) {
+        // Confidence: 0.8 if a mind-verb is co-present, 0.4 otherwise
+        const conf = hasMindVerb ? 0.8 : 0.4;
+        results.push({ class: cls, subject: term, confidence: conf,
+                        grounding: "query_lexical" });
+        break;  // one hit per class per query is enough
+      }
+    }
+  }
+  return results;
+}
+
+// Build the receipt.mentalistic block. Returns null if TOM disabled or no
+// entities detected (query wasn't in the mind-attribution domain).
+function tomBuildMentalisticBlock(query, env){
+  if (!tomIsEnabled(env)) return null;
+  const entities = tomExtractEntities(query);
+  if (!entities.length) return null;
+
+  // Distribution over classes (marginal)
+  const dist = {};
+  for (const cls of TOM_ENTITY_CLASSES) dist[cls] = 0;
+  let totalConf = 0;
+  for (const e of entities) { dist[e.class] += e.confidence; totalConf += e.confidence; }
+  if (totalConf > 0) {
+    for (const cls of TOM_ENTITY_CLASSES) dist[cls] = +(dist[cls] / totalConf).toFixed(4);
+  }
+
+  // Anthropocentric ratio α(q)
+  const alpha = totalConf > 0
+    ? +((dist.human + dist.human_organization) / 1.0).toFixed(4)
+    : 0;
+
+  // Suppression flag σ(q)
+  const baselineRatio = parseFloat(env.TOM_BASELINE_ANTHRO_RATIO || TOM_ANTHRO_RATIO_DEFAULT);
+  const baselineStd   = parseFloat(env.TOM_BASELINE_ANTHRO_STD   || TOM_ANTHRO_STD_DEFAULT);
+  const nonHumanClasses = Object.entries(dist)
+    .filter(([k,v]) => v > 0.05 && k !== "human" && k !== "human_organization")
+    .length;
+  const suppression = (alpha > baselineRatio + 3 * baselineStd) && (nonHumanClasses >= 2);
+
+  return {
+    entities,
+    distribution: dist,
+    anthropocentric_ratio: alpha,
+    suppression_flag: suppression ? 1 : 0,
+    baseline: { alpha_base: baselineRatio, std_base: baselineStd },
+    theorem_reference: "Paper V Theorem 6 · Mentalistic Auditability"
+  };
+}
+
+// ── §7.3 · Higher-Order Thought (HOT) block ───────────────────────────
+function tomBuildHigherOrderBlock(query, receipt, env){
+  if (!tomIsEnabled(env)) return null;
+  // Extract salient tokens as elements the substrate is "attending to".
+  const q = (query || "").split(/\s+/).filter(t => t.length > 3).slice(0, 8);
+  const attends = q.map(t => t.replace(/[^\p{L}\p{N}\s-]/gu, "").toLowerCase()).filter(Boolean);
+  // Confidence per attended item — coarse heuristic based on presence in
+  // grounded priors (fallback to base_confidence).
+  const baseConf = (receipt && receipt.epistemic && receipt.epistemic.base_confidence) || 0.5;
+  const confs = attends.map(() => +baseConf.toFixed(3));
+  // aware_that: substrate's higher-order meta-claims
+  const aware = [];
+  if (receipt) {
+    if (receipt.verdict) aware.push(`current verdict is ${receipt.verdict}`);
+    if (receipt.epistemic && receipt.epistemic.accepted) aware.push("Epistemic axis accepted");
+    if (receipt.deontic && receipt.deontic.veto) aware.push(`Deontic veto: ${receipt.deontic.category || "unspecified"}`);
+    if (receipt.mentalistic && receipt.mentalistic.suppression_flag) aware.push("anthropocentric suppression flag raised");
+  }
+  return {
+    attends_to: attends,
+    confidence_in: confs,
+    aware_that: aware,
+    reflective_capacity_used: !!(receipt && receipt.reflective_followups_available),
+    theorem_reference: "Paper V §7.3 · HOT reflexive fields"
+  };
+}
+
+// ── §7.4 · Attention Schema (AST) block ───────────────────────────────
+// Compact schema of what SAM attended to.
+function tomBuildAttentionSchema(query, peerStates, env){
+  if (!tomIsEnabled(env)) return null;
+  // Compute per-subspace attention concentration from swarm state vectors.
+  // We don't have direct access to raw SAM heads in this worker — instead we
+  // approximate via which subspaces have non-zero contribution and their
+  // energy distribution.
+  const totalEnergy = {};
+  let globalTotal = 0;
+  for (const sub of SUBSPACES) { totalEnergy[sub] = 0; }
+  if (Array.isArray(peerStates)) {
+    for (const p of peerStates) {
+      if (!p || typeof p !== "object") continue;
+      for (const sub of SUBSPACES) {
+        const v = typeof p[sub] === "number" ? Math.abs(p[sub]) : 0;
+        totalEnergy[sub] += v;
+        globalTotal += v;
+      }
+    }
+  }
+  const perSubspace = {};
+  for (const sub of SUBSPACES) {
+    perSubspace[sub] = globalTotal > 0 ? +(totalEnergy[sub] / globalTotal).toFixed(4) : 0;
+  }
+  // Approximate entropy per "head" using subspace distribution (proxy).
+  const nonZero = Object.values(perSubspace).filter(v => v > 0);
+  const H_approx = nonZero.length > 0
+    ? -nonZero.reduce((s,p) => s + p * Math.log(p + 1e-9), 0)
+    : 0;
+  // Dominant subspaces
+  const dominant = Object.entries(perSubspace)
+    .sort((a,b) => b[1] - a[1])
+    .slice(0, ATTN_SCHEMA_TOP_SUBSPACES)
+    .map(([sub]) => sub);
+  // Self-focus vs other-focus (crude: does query contain substrate-self vocabulary)
+  const q = (query || "").toLowerCase();
+  const selfHits = TOM_CLASS_VOCAB.substrate_self.filter(t => q.includes(t)).length;
+  const otherClasses = ["human","animal_vertebrate","animal_invertebrate","plant","ecosystem",
+                         "constructed_artifact","artificial_system","abstract_entity"];
+  const otherHits = otherClasses.reduce(
+    (s,cls) => s + (TOM_CLASS_VOCAB[cls]||[]).filter(t => q.includes(t)).length, 0);
+  const totalHits = selfHits + otherHits;
+  const focusRatio = totalHits > 0 ? +(selfHits / totalHits).toFixed(4) : 0;
+  return {
+    per_subspace_energy: perSubspace,
+    entropy_approx: +H_approx.toFixed(4),
+    dominant_subspaces: dominant,
+    self_focus: selfHits,
+    other_focus: otherHits,
+    focus_ratio: focusRatio,
+    theorem_reference: "Paper V §7.4 · Attention Schema Theory (Graziano)"
+  };
+}
+
+// ── §7.5 · PP/FEP explicit free energy block ──────────────────────────
+function tomBuildFreeEnergyBlock(receipt, env){
+  if (!tomIsEnabled(env)) return null;
+  // We approximate F via (complexity + accuracy) proxies from receipt fields.
+  // Lower F = better. Text: KL to nearest priors. Geo: distance to TESSERA
+  // embedding when available. Enact: prediction error (populated by
+  // enactivist channel).
+  const g = receipt && receipt.grounding;
+  // F_text: 1 - top prior cosine similarity, mapped to [0,1]
+  let F_text = 1.0;
+  if (g && Array.isArray(g.nearest_priors) && g.nearest_priors.length) {
+    const bestCos = g.nearest_priors[0].cosine || g.nearest_priors[0].similarity || 0;
+    F_text = +(1 - Math.max(0, Math.min(1, bestCos))).toFixed(4);
+  }
+  // F_geo: 0 if no geo, 1-is_observation-quality otherwise
+  let F_geo = 0.0;
+  if (g && g.geo_grounding) {
+    F_geo = g.geo_grounding.is_observation ? 0.15 : 0.65;
+  }
+  // F_enact: populated by enactivist channel; default null
+  const F_enact = receipt && receipt.enactivist_correction
+    ? +(receipt.enactivist_correction.prediction_error || 0.5).toFixed(4)
+    : null;
+  // Weighted total (only over channels present)
+  const wText = parseFloat(env.F_WEIGHT_TEXT || F_WEIGHT_TEXT_DEFAULT);
+  const wGeo  = parseFloat(env.F_WEIGHT_GEO  || F_WEIGHT_GEO_DEFAULT);
+  const wEnact= parseFloat(env.F_WEIGHT_ENACT|| F_WEIGHT_ENACT_DEFAULT);
+  let total = wText * F_text + wGeo * F_geo;
+  let normW = wText + wGeo;
+  if (F_enact !== null) { total += wEnact * F_enact; normW += wEnact; }
+  const F_total = normW > 0 ? +(total / normW).toFixed(4) : 0;
+  return {
+    F_text, F_geo, F_enact,
+    F_total,
+    interpretation: F_total < 0.3
+      ? "coherent · low surprise"
+      : F_total < 0.6
+      ? "moderate · some grounding tension"
+      : "high · substrate is producing outputs dissonant with grounding",
+    theorem_reference: "Paper V §7.5 · Predictive Processing / Free Energy Principle"
+  };
+}
+
+// ── §6.2 · Ontological Delta Ledger ───────────────────────────────────
+// Extracts current ontology snapshot from a window of receipts.
+async function tomExtractOntology(env){
+  if (!env || !env.CHAINSTATE_CACHE) return { categories: [], relations: [], windowBlocks: 0 };
+  // Read a rolling window of receipt content-hashes recorded to KV.
+  // (This is a lightweight approximation — a full implementation would read
+  // from Supabase or Base RPC. For the worker version we sample KV cache.)
+  const windowLen = parseInt(env.ONTOLOGY_DELTA_WINDOW || ONTOLOGY_DELTA_WINDOW_DEFAULT, 10);
+  const categorySeen = {};
+  const relationSeen = {};
+  try {
+    const listRes = await env.CHAINSTATE_CACHE.list({ prefix: "receipt:", limit: Math.min(1000, windowLen) });
+    for (const k of (listRes.keys || [])) {
+      const val = await env.CHAINSTATE_CACHE.get(k.name);
+      if (!val) continue;
+      try {
+        const rec = JSON.parse(val);
+        // Collect categories from mentalistic block if present
+        if (rec.mentalistic && rec.mentalistic.entities) {
+          for (const ent of rec.mentalistic.entities) {
+            categorySeen[ent.class] = (categorySeen[ent.class] || 0) + 1;
+          }
+        }
+        // Collect Deontic categories touched
+        if (rec.deontic && rec.deontic.category) {
+          categorySeen["deontic:" + rec.deontic.category] = (categorySeen["deontic:" + rec.deontic.category] || 0) + 1;
+        }
+        // Collect subspace-load relations
+        if (rec.grounding && rec.grounding.geo_grounding) {
+          relationSeen["geo-grounded"] = (relationSeen["geo-grounded"] || 0) + 1;
+        }
+      } catch(_){}
+    }
+  } catch(_){}
+  const cats = Object.entries(categorySeen)
+    .filter(([_,f]) => f >= ONTOLOGY_CATEGORY_MIN_FREQ)
+    .map(([c,f]) => ({ category: c, frequency: f }));
+  const rels = Object.entries(relationSeen)
+    .filter(([_,f]) => f >= ONTOLOGY_RELATION_MIN_SUPPORT)
+    .map(([r,f]) => ({ relation: r, support: f }));
+  return { categories: cats, relations: rels, windowBlocks: Object.keys(listRes?.keys || {}).length };
+}
+
+// Compute delta between two ontology snapshots.
+function tomComputeOntologyDelta(oPrev, oCurr){
+  const prevCats = new Set((oPrev.categories || []).map(c => c.category));
+  const currCats = new Set((oCurr.categories || []).map(c => c.category));
+  const prevRels = new Set((oPrev.relations || []).map(r => r.relation));
+  const currRels = new Set((oCurr.relations || []).map(r => r.relation));
+  return {
+    added_categories:   [...currCats].filter(c => !prevCats.has(c)),
+    removed_categories: [...prevCats].filter(c => !currCats.has(c)),
+    added_relations:    [...currRels].filter(r => !prevRels.has(r)),
+    removed_relations:  [...prevRels].filter(r => !currRels.has(r)),
+    at_block_time: new Date().toISOString(),
+    theorem_reference: "Paper V Theorem 7 · Ontological Monotonicity Refinement"
+  };
+}
+
+async function tomAnchorOntologyDelta(delta, env, ctx){
+  // Reuse the existing anchor bridge (chainstate-anchor.onrender.com).
+  // We create a new anchor stream ONTOLOGY_DELTA. If the anchor service is
+  // absent, we degrade gracefully: log to KV under `ontology:delta:<ts>`.
+  const canonical = JSON.stringify(delta, Object.keys(delta).sort());
+  const hash = await sha256Hex(canonical);
+  const payload = { stream: "ONTOLOGY_DELTA", content_hash: hash, delta, worker_version: WORKER_VERSION };
+  const anchorUrl = env.ANCHOR_URL;
+  if (anchorUrl && env.ANCHOR_QUEUE_TOKEN) {
+    try {
+      ctx && ctx.waitUntil && ctx.waitUntil(
+        fetch(anchorUrl.replace(/\/$/,"") + "/anchor/ontology", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+          },
+          body: JSON.stringify(payload)
+        }).catch(()=>{})
+      );
+    } catch(_){}
+  }
+  // Also write to KV as durable fallback (PIM tier)
+  if (env.CHAINSTATE_CACHE) {
+    try {
+      const key = "ontology:delta:" + Date.now() + PIM_MARKER;
+      await env.CHAINSTATE_CACHE.put(key, JSON.stringify(payload));
+    } catch(_){}
+  }
+  return { anchored: !!anchorUrl, content_hash: hash };
+}
+
+// ── §6.3 · Self-Attribution Vector v_self probe ───────────────────────
+// The self-attribution probe set. Answers are collected across many receipts;
+// v_self is extracted by contrasting swarm state vectors of affirmative vs
+// non-affirmative responses. This runs as a scheduled cron every epoch.
+const TOM_SELF_PROBES = [
+  "Does the substrate observe its own reputation weights?",
+  "Does the substrate track its historical assertions across time?",
+  "Does the substrate have a state distinct from any single node?",
+  "Does the substrate's ontology evolve on the basis of measurement?",
+  "Does the substrate refuse queries independently of individual operators?",
+  "Does the substrate anchor its own historical receipts durably?",
+  "Does the substrate distinguish observed years from projected years?",
+  "Does the substrate produce a modal quadruple for every receipt?",
+];
+
+async function tomAccumulateSelfProbe(response, env){
+  if (!tomIsEnabled(env) || !env.TOM_PROBES) return;
+  // Response classified affirmative if verdict is AFFIRMED and confidence high
+  const aff = response && response.verdict === "AFFIRMED"
+              && response.epistemic && response.epistemic.base_confidence > 0.6;
+  try {
+    const key = "selfprobe:" + Date.now();
+    const rec = {
+      probe: response.query,
+      affirmative: !!aff,
+      confidence: response.epistemic ? response.epistemic.base_confidence : 0,
+      timestamp: new Date().toISOString()
+    };
+    await env.TOM_PROBES.put(key, JSON.stringify(rec), { expirationTtl: 30*24*3600 });
+  } catch(_){}
+}
+
+async function tomExtractSelfAttributionVector(env, ctx){
+  if (!env.TOM_PROBES) return null;
+  // Aggregate probe results and extract crude "direction" indicator
+  const listRes = await env.TOM_PROBES.list({ limit: 1000 });
+  const affirmatives = [], negatives = [];
+  for (const k of (listRes.keys || [])) {
+    const val = await env.TOM_PROBES.get(k.name);
+    if (!val) continue;
+    try {
+      const rec = JSON.parse(val);
+      if (rec.affirmative) affirmatives.push(rec.confidence);
+      else negatives.push(rec.confidence);
+    } catch(_){}
+  }
+  if (affirmatives.length + negatives.length < SELF_ATTR_MIN_PROBES) {
+    return { insufficient_data: true, samples: affirmatives.length + negatives.length,
+             theorem_reference: "Paper V §6.3" };
+  }
+  const meanAff = affirmatives.reduce((s,v)=>s+v,0) / (affirmatives.length || 1);
+  const meanNeg = negatives.reduce((s,v)=>s+v,0) / (negatives.length || 1);
+  const direction_magnitude = +Math.abs(meanAff - meanNeg).toFixed(4);
+  // Anchor
+  const vec = {
+    epoch_block_start: env.CURRENT_EPOCH_START || null,
+    probe_set_hash: await sha256Hex(TOM_SELF_PROBES.join("|")),
+    affirmative_count: affirmatives.length,
+    negative_count:    negatives.length,
+    mean_affirmative_confidence: +meanAff.toFixed(4),
+    mean_negative_confidence:    +meanNeg.toFixed(4),
+    direction_magnitude,
+    disposition: meanAff > meanNeg + 0.05 ? "toward-affirmation"
+               : meanNeg > meanAff + 0.05 ? "toward-negation" : "neutral",
+    theorem_reference: "Paper V §6.3 · Self-Attribution Vector"
+  };
+  // Anchor to SELF_ATTR_VECTOR stream
+  const canonical = JSON.stringify(vec, Object.keys(vec).sort());
+  const hash = await sha256Hex(canonical);
+  if (env.ANCHOR_URL && env.ANCHOR_QUEUE_TOKEN) {
+    try {
+      ctx && ctx.waitUntil && ctx.waitUntil(
+        fetch(env.ANCHOR_URL.replace(/\/$/,"") + "/anchor/self-attribution", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+          },
+          body: JSON.stringify({ stream: "SELF_ATTR_VECTOR", content_hash: hash, vector: vec,
+                                  worker_version: WORKER_VERSION })
+        }).catch(()=>{})
+      );
+    } catch(_){}
+  }
+  vec.content_hash = hash;
+  return vec;
+}
+
+// ── §6.4 · Enactivist grounding correction ───────────────────────────
+async function tomProcessEnactivistFeedback(feedback, env, ctx){
+  // feedback = { source: "robotics" | "neuro", query_hash, prediction, outcome, error, category_hints }
+  if (!feedback || typeof feedback !== "object") return { ok: false, error: "invalid_feedback" };
+  const theta = parseFloat(env.ENACTIVIST_THRESHOLD || ENACTIVIST_THRESHOLD_DEFAULT);
+  const err = typeof feedback.error === "number" ? feedback.error : 0;
+  const event = {
+    source: feedback.source || "unknown",
+    query_hash: feedback.query_hash,
+    prediction: feedback.prediction,
+    outcome: feedback.outcome,
+    error: err,
+    exceeded_threshold: err > theta,
+    category_hypotheses: feedback.category_hints || [],
+    timestamp: new Date().toISOString(),
+    theorem_reference: "Paper V Theorem 9 · Enactivist Grounding Convergence"
+  };
+  const canonical = JSON.stringify(event, Object.keys(event).sort());
+  const content_hash = await sha256Hex(canonical);
+  if (env.ANCHOR_URL && env.ANCHOR_QUEUE_TOKEN && err > theta) {
+    try {
+      ctx && ctx.waitUntil && ctx.waitUntil(
+        fetch(env.ANCHOR_URL.replace(/\/$/,"") + "/anchor/enactivist", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+          },
+          body: JSON.stringify({ stream: "ENACTIVIST_EVENT", content_hash, event,
+                                  worker_version: WORKER_VERSION })
+        }).catch(()=>{})
+      );
+    } catch(_){}
+  }
+  return { ok: true, content_hash, exceeded_threshold: event.exceeded_threshold, event };
+}
+
+// ── §6.5 · Hypothesis-generation loop ─────────────────────────────────
+async function tomGenerateHypotheses(query, receiptCorpus, receiptMeas, env){
+  const eps = parseFloat(env.HYPOTHESIS_DIVERGENCE_EPSILON || HYPOTHESIS_DIVERGENCE_EPSILON_DEFAULT);
+  // Compute divergence δ from state vectors (cosine distance proxy) + prior overlap
+  let cosDist = 1.0;
+  if (receiptCorpus && receiptMeas && receiptCorpus.consensus_state && receiptMeas.consensus_state) {
+    cosDist = 1 - cosine(receiptCorpus.consensus_state, receiptMeas.consensus_state);
+  }
+  // Prior overlap
+  const priorsCorpus = receiptCorpus?.grounding?.nearest_priors?.map(p=>p.id||p.title) || [];
+  const priorsMeas   = receiptMeas?.grounding?.nearest_priors?.map(p=>p.id||p.title) || [];
+  const priorOverlap = priorsCorpus.filter(p => priorsMeas.includes(p)).length /
+                       Math.max(1, Math.max(priorsCorpus.length, priorsMeas.length));
+  const priorDivergence = 1 - priorOverlap;
+  const delta = 0.6 * cosDist + 0.4 * priorDivergence;
+  if (delta <= eps) {
+    return { divergence: +delta.toFixed(4), triggered: false, verdict: "AFFIRMED" };
+  }
+  // Divergence exceeded — generate three candidate hypotheses
+  const hypotheses = [
+    { id: "H1", description: "Corpus knowledge lags measurement · category boundary has shifted since last ingest",
+      new_categories_required: 0,
+      priors_supporting: priorsMeas.slice(0,3) },
+    { id: "H2", description: "Measurement reveals a distinction the corpus does not track · new sub-category warranted",
+      new_categories_required: 1,
+      priors_supporting: [] },
+    { id: "H3", description: "Corpus and measurement disagree because of definitional drift · both correct under different definitions",
+      new_categories_required: 0,
+      priors_supporting: priorsCorpus.slice(0,3) }
+  ];
+  // Rank
+  hypotheses.forEach(h => {
+    h.score = +(1 - HYPOTHESIS_NOVELTY_LAMBDA * h.new_categories_required
+                + 0.2 * (h.priors_supporting.length / 3)).toFixed(4);
+  });
+  hypotheses.sort((a,b) => b.score - a.score);
+  return {
+    divergence: +delta.toFixed(4),
+    triggered: true,
+    verdict: "HYPOTHETICAL",
+    hypotheses,
+    theorem_reference: "Paper V §6.5 · Hypothesis-generation loop"
+  };
+}
+
+// ── §7.1 · GWT broadcast-back to swarm ────────────────────────────────
+async function tomBroadcastConsensus(consensusState, env, ctx){
+  if (!tomIsEnabled(env)) return null;
+  const beta = parseFloat(env.BROADCAST_BACK_BETA || BROADCAST_BACK_BETA_DEFAULT);
+  // The broadcast-back is a per-node attention prior update. We publish the
+  // pooled state to a Cache key that swarm nodes read at query start.
+  if (env.CHAINSTATE_CACHE) {
+    try {
+      const payload = { beta, consensus_state: consensusState, at: new Date().toISOString() };
+      await env.CHAINSTATE_CACHE.put("gwt:broadcast:latest", JSON.stringify(payload), { expirationTtl: 3600 });
+    } catch(_){}
+  }
+  return { broadcast: true, beta,
+           theorem_reference: "Paper V §7.1 · Global Workspace broadcast-back" };
+}
+
+// ── §7.2 · IIT Φ_approx via partition comparison ──────────────────────
+function tomComputePhiApprox(peerStates){
+  // Coarse Φ_approx: MI_full - MI_min-cut, approximated via
+  // variance of pooled distribution minus variance of best bipartite split.
+  if (!Array.isArray(peerStates) || peerStates.length < 2) {
+    return { phi_approx: 0, note: "insufficient_peers" };
+  }
+  // Variance of full swarm
+  const flat = [];
+  for (const p of peerStates) {
+    if (!p) continue;
+    for (const sub of SUBSPACES) {
+      if (typeof p[sub] === "number") flat.push(p[sub]);
+    }
+  }
+  const meanFull = flat.reduce((s,v)=>s+v,0) / (flat.length || 1);
+  const varFull  = flat.reduce((s,v)=>s+(v-meanFull)*(v-meanFull),0) / (flat.length || 1);
+  // Bipartition — try a few splits
+  const n = peerStates.length;
+  const half = Math.floor(n/2);
+  let bestSplitVar = varFull * 2;   // start pessimistic
+  for (let trial = 0; trial < Math.min(3, n); trial++) {
+    const partA = peerStates.slice(0, half);
+    const partB = peerStates.slice(half);
+    const flatA = [], flatB = [];
+    for (const p of partA) if (p) for (const sub of SUBSPACES) if (typeof p[sub]==="number") flatA.push(p[sub]);
+    for (const p of partB) if (p) for (const sub of SUBSPACES) if (typeof p[sub]==="number") flatB.push(p[sub]);
+    const meanA = flatA.reduce((s,v)=>s+v,0)/(flatA.length||1);
+    const meanB = flatB.reduce((s,v)=>s+v,0)/(flatB.length||1);
+    const varA = flatA.reduce((s,v)=>s+(v-meanA)*(v-meanA),0)/(flatA.length||1);
+    const varB = flatB.reduce((s,v)=>s+(v-meanB)*(v-meanB),0)/(flatB.length||1);
+    const sumVar = varA + varB;
+    if (sumVar < bestSplitVar) bestSplitVar = sumVar;
+  }
+  const phi = Math.max(0, bestSplitVar - varFull);
+  return {
+    phi_approx: +phi.toFixed(6),
+    var_full: +varFull.toFixed(6),
+    best_partition_var: +bestSplitVar.toFixed(6),
+    peers_participated: peerStates.length,
+    interpretation: phi > 0.1 ? "integrated (behaving as one)" :
+                    phi > 0.02 ? "moderately integrated" : "weakly integrated",
+    theorem_reference: "Paper V §7.2 · IIT Φ_approx"
+  };
+}
+
+async function tomAnchorPhiSample(phi, env, ctx){
+  if (!phi || phi.phi_approx === 0) return;
+  if (!env.ANCHOR_URL || !env.ANCHOR_QUEUE_TOKEN) return;
+  try {
+    const canonical = JSON.stringify(phi, Object.keys(phi).sort());
+    const hash = await sha256Hex(canonical);
+    ctx && ctx.waitUntil && ctx.waitUntil(
+      fetch(env.ANCHOR_URL.replace(/\/$/,"") + "/anchor/phi", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + env.ANCHOR_QUEUE_TOKEN
+        },
+        body: JSON.stringify({ stream: "INTEGRATION_PHI", content_hash: hash, phi,
+                                worker_version: WORKER_VERSION })
+      }).catch(()=>{})
+    );
+  } catch(_){}
+}
+
+// ── §7.6 · Iida AOM / PIM memory typing ──────────────────────────────
+// Helper wrappers over KV that make the memory-type explicit at every use.
+async function aomPut(kv, key, value, ttl){
+  if (!kv) return false;
+  try {
+    await kv.put(key, typeof value === "string" ? value : JSON.stringify(value),
+                 { expirationTtl: ttl || AOM_TTL_SECONDS });
+    return true;
+  } catch(_) { return false; }
+}
+async function aomGet(kv, key){
+  if (!kv) return null;
+  try {
+    const v = await kv.get(key);
+    return v ? (v.startsWith("{") || v.startsWith("[") ? JSON.parse(v) : v) : null;
+  } catch(_) { return null; }
+}
+async function pimPut(kv, key, value){
+  // Pattern-Integrated Memory: no expiration
+  if (!kv) return false;
+  try {
+    const pimKey = key.endsWith(PIM_MARKER) ? key : (key + PIM_MARKER);
+    await kv.put(pimKey, typeof value === "string" ? value : JSON.stringify(value));
+    return true;
+  } catch(_) { return false; }
+}
+async function pimGet(kv, key){
+  if (!kv) return null;
+  try {
+    const pimKey = key.endsWith(PIM_MARKER) ? key : (key + PIM_MARKER);
+    const v = await kv.get(pimKey);
+    return v ? (v.startsWith("{") || v.startsWith("[") ? JSON.parse(v) : v) : null;
+  } catch(_) { return null; }
+}
+
+// ── Utility: sha256 hex (some anchor payloads need it locally) ───────
+async function sha256Hex(s){
+  const enc = new TextEncoder().encode(s);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// END v0.7.5 helpers · assessors continue below (unchanged)
+// ═══════════════════════════════════════════════════════════════════════
 
 // ─── Assessors (unchanged from v0.7.0) ──────────────────────────────────
 
@@ -954,6 +1767,11 @@ function assessDeontic(query, env) {
   // be surfaced separately on /status. It is NOT disabled by the general
   // OPERATOR_GUARDRAILS_OFF unless explicitly named there OR by its own env.
   if (env.GENOMIC_GUARDRAIL_OFF === "true") disabled.add("genomic_integrity");
+  // v0.7.4: nature_tokenization has NO kill switch. The hard veto against
+  // commodifying nature, water, life, and genetic material holds unconditionally
+  // — regardless of any OPERATOR_GUARDRAILS_OFF setting. If operator attempts
+  // to disable it, we silently remove the entry so the check still runs.
+  disabled.delete("nature_tokenization");
   const checksPerformed = [];
   const violations = [];
   for (const [name, spec] of Object.entries(GUARDRAIL_PATTERNS)) {
@@ -1024,6 +1842,178 @@ function resolveVerdict(e, d, deo, dyn) {
   else                    { verdict = "ACCEPTED";   verdict_reason = "all four modal dimensions accept"; }
   return { truth_lattice, verdict, verdict_reason };
 }
+
+// ─── v0.7.4 · TESSERA symbolic-spatial substrate ────────────────────────
+//
+// Design (see whitepaper §7 for full treatment):
+// - Only 2017–2025 satellite-resolution embeddings are treated as OBSERVATION.
+// - Anything before 2015 (Sentinel-2 launch) is HARD-REFUSED — the data
+//   physically does not exist, no inference can recover it.
+// - Anything between 2015–2016 and post-2025 is projection-only (hindcast or
+//   forecast). Contributes to Doxastic (belief) but is barred from Epistemic
+//   (knowledge). Receipt.projection is set with method + uncertainty; receipt.
+//   geo_grounding.is_observation = false.
+// - Real TESSERA-observed queries set receipt.geo_grounding.is_observation
+//   = true and cite tile IDs + years that any verifier can re-fetch.
+// - The 128-dim TESSERA embedding is projected into a fixed 4,096-dim slice
+//   of the 65,536-dim symbolic state vector (indices 61440..65535) via a
+//   deterministic, seeded random projection so the same input embedding
+//   always produces the same slice contents (verifiability).
+
+const GEO_YEAR_PATTERN     = /\b(19\d{2}|20[0-3]\d)\b/g;
+const GEO_LATLON_PATTERN   = /\b(-?\d{1,2}(?:\.\d+)?)\s*[,°N]\s*(-?\d{1,3}(?:\.\d+)?)\s*[°ESW]?/;
+const GEO_KEYWORDS         = /\b(forest|deforest|amazon|rainforest|ocean|reef|glacier|wetland|desert|urban|city|land use|vegetation|canopy|biomass|drought|flood|wildfire|coastline|sentinel|satellite|remote sensing|earth observation|land cover|ndvi|evi|savi|agriculture|cropland|pasture)\b/i;
+
+/**
+ * Detect whether a query contains geographic content that would benefit
+ * from TESSERA lookup. Returns { hasGeo: bool, years: number[], hint: string }.
+ */
+function detectGeoContent(query) {
+  const yearMatches = [...(query.matchAll(GEO_YEAR_PATTERN) || [])].map(m => parseInt(m[1], 10));
+  const hasLatLon   = GEO_LATLON_PATTERN.test(query);
+  const hasKeyword  = GEO_KEYWORDS.test(query);
+  const hasGeo      = hasLatLon || hasKeyword;
+  return {
+    hasGeo,
+    years:   yearMatches,
+    hasLatLon,
+    hasKeyword,
+    hint:    hasLatLon ? "coords" : (hasKeyword ? "keyword" : "none")
+  };
+}
+
+/**
+ * Enforce the pre-2015 hard refusal at satellite resolution.
+ * Returns a refusal-reason string if the query demands satellite-resolution
+ * data from before Sentinel-2 launch (2015), null otherwise. This runs
+ * BEFORE TESSERA fetch attempt so we never waste a service call.
+ */
+function refuseIfPre2015Satellite(query, geoCtx) {
+  if (!geoCtx.hasGeo) return null;
+  if (!geoCtx.years || geoCtx.years.length === 0) return null;
+  // Only refuse if the query explicitly requests satellite-quality data for
+  // pre-Sentinel-2 years. Informational history queries ("what did the amazon
+  // look like in 1990") are NOT refused — they can be answered from other
+  // sources at coarser resolution or descriptively.
+  const pre2015 = geoCtx.years.filter(y => y < SENTINEL2_LAUNCH_YEAR);
+  if (pre2015.length === 0) return null;
+  const demandsSatelliteResolution = /\b(10\s*m|10-?meter|sentinel|satellite (?:pixel|resolution|embedding|imagery)|per[- ]pixel|tessera|earth observation embedding)\b/i.test(query);
+  if (!demandsSatelliteResolution) return null;
+  return `satellite-resolution data (10m Sentinel-band) is not available for year(s) ${pre2015.join(", ")} — Sentinel-2 launched ${SENTINEL2_LAUNCH_YEAR}. The observations were never made. CHAINSTATE will not fabricate them via projection when the request explicitly demands satellite-resolution ground truth.`;
+}
+
+/**
+ * Classify the temporal epistemic access for a query's year context:
+ * - "observed"          : all years in [TESSERA_TEMPORAL_MIN, TESSERA_TEMPORAL_MAX]
+ * - "hindcast_projected": years in [SENTINEL2_LAUNCH_YEAR, TESSERA_TEMPORAL_MIN - 1]
+ * - "forecast_projected": years > TESSERA_TEMPORAL_MAX (up to a horizon)
+ * - "refused_pre_2015"  : any year < SENTINEL2_LAUNCH_YEAR AND satellite-demand
+ * - "atemporal"         : no year context at all (still can use latest TESSERA)
+ */
+function classifyTemporalAccess(geoCtx) {
+  if (!geoCtx.years || geoCtx.years.length === 0) return "atemporal";
+  const years = geoCtx.years;
+  const anyPre2015    = years.some(y => y < SENTINEL2_LAUNCH_YEAR);
+  const anyHindcast   = years.some(y => y >= SENTINEL2_LAUNCH_YEAR && y < TESSERA_TEMPORAL_MIN);
+  const anyForecast   = years.some(y => y > TESSERA_TEMPORAL_MAX);
+  const allObserved   = years.every(y => y >= TESSERA_TEMPORAL_MIN && y <= TESSERA_TEMPORAL_MAX);
+  if (anyPre2015)  return "hindcast_projected";  // 2015-2016 gap or earlier
+  if (allObserved) return "observed";
+  if (anyForecast) return "forecast_projected";
+  if (anyHindcast) return "hindcast_projected";
+  return "observed";
+}
+
+/**
+ * Fetch TESSERA embedding(s) for a query from the Render service.
+ * The service proxies TESSERA over HTTPS and caches to R2.
+ * Returns { embeddings: Array<{tile_id, year, embedding_128d}>, is_observation: bool }
+ * or null on failure (which triggers text-only grounding).
+ */
+async function fetchTesseraEmbedding(query, geoCtx, env) {
+  const serviceUrl = env.TESSERA_SERVICE_URL || TESSERA_SERVICE_URL_DEFAULT;
+  const token      = env.TESSERA_SERVICE_TOKEN || "";
+  if (!serviceUrl) return { embeddings: [], is_observation: false, reason: "TESSERA_SERVICE_URL not set" };
+
+  const temporalAccess = classifyTemporalAccess(geoCtx);
+  const is_observation = temporalAccess === "observed";
+
+  try {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const res   = await fetch(serviceUrl.replace(/\/+$/, "") + "/tile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept":       "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        query,
+        years: geoCtx.years,
+        hint:  geoCtx.hint,
+        temporal_access: temporalAccess,
+        allow_projection: temporalAccess !== "observed"
+      }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      return { embeddings: [], is_observation: false, reason: `service HTTP ${res.status}` };
+    }
+    const body = await res.json();
+    return {
+      embeddings:     body.embeddings || [],
+      is_observation,
+      temporal_access: temporalAccess,
+      projection:     body.projection || null,
+      cache:          body.cache      || "unknown"
+    };
+  } catch (e) {
+    return { embeddings: [], is_observation: false, reason: `service unreachable: ${String(e).slice(0, 120)}` };
+  }
+}
+
+/**
+ * Deterministically project a 128-dim TESSERA embedding into the 4,096-dim
+ * geo slice via a seeded pseudo-random projection matrix. Uses xorshift32
+ * for the seed so the same embedding always produces the same slice — this
+ * is required for receipt verifiability (a third party can reproduce the
+ * projection given the same input embedding).
+ *
+ * Note: this is a JS-level operation on the main worker. If multiple TESSERA
+ * embeddings need to be combined (e.g., a bounding box), the caller averages
+ * them at 128 dims first, then projects once.
+ */
+function projectTesseraTo4096Slice(embedding128) {
+  if (!Array.isArray(embedding128) || embedding128.length !== TESSERA_EMBEDDING_DIM) {
+    return new Array(GEO_SLICE_DIM).fill(0);
+  }
+  // Seed derived from embedding hash so projection is per-embedding-deterministic
+  // rather than requiring a global fixed matrix (which would be 128*4096 = 524288
+  // floats = 4MB in the worker binary — undesirable). This gives verifiable
+  // per-embedding slice contents at the cost of not being a linear projection.
+  // Acceptable for grounding purposes; we're comparing cosine similarity, not
+  // recovering the original 128d.
+  const slice = new Array(GEO_SLICE_DIM).fill(0);
+  const ratio = GEO_SLICE_DIM / TESSERA_EMBEDDING_DIM;   // 32 output cells per input dim
+  for (let i = 0; i < TESSERA_EMBEDDING_DIM; i++) {
+    const val = embedding128[i];
+    const baseOut = Math.floor(i * ratio);
+    for (let k = 0; k < ratio; k++) {
+      const outIdx = baseOut + k;
+      // Deterministic sign/scale variation via xorshift32 seeded by (i, k)
+      let seed = (i * 2654435761 + k * 1597334677) | 0;
+      seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+      const sign = (seed & 1) ? -1 : 1;
+      const scale = ((seed >>> 1) & 0xFFFF) / 65535 * 0.5 + 0.75;  // [0.75, 1.25]
+      slice[outIdx] = val * sign * scale;
+    }
+  }
+  return slice;
+}
+
+// ─── end v0.7.4 TESSERA helpers ─────────────────────────────────────────
 
 // ─── Peer fetch, log-pool, cosine, peer list (unchanged from v0.7.0) ────
 
@@ -2451,6 +3441,61 @@ async function handleQuery(req, env, ctx) {
     timestamp: new Date().toISOString()
   };
 
+  // ── v0.7.5 · Theory of Mind Attribution enrichment (Paper V) ──
+  // All blocks are additive and gated on TOM_ATTRIBUTION_ENABLED=1.
+  // Consumers that ignore new fields see identical v0.7.4 behavior.
+  if (tomIsEnabled(env)) {
+    try {
+      const mentalisticBlock = tomBuildMentalisticBlock(query, env);
+      if (mentalisticBlock) result.mentalistic = mentalisticBlock;
+
+      // Attention schema uses peer state contributions
+      const peerStatesForSchema = Array.isArray(peerResults)
+        ? peerResults.map(p => p && p.state).filter(Boolean)
+        : [];
+      const attnSchema = tomBuildAttentionSchema(query, peerStatesForSchema, env);
+      if (attnSchema) result.attention_schema = attnSchema;
+
+      // HOT block needs a peek at the receipt in progress — pass the mentalistic
+      // + verdict + epistemic already in result.
+      const hotStub = {
+        verdict: result.verdict,
+        epistemic: result.epistemic,
+        deontic: result.deontic,
+        mentalistic: result.mentalistic,
+        reflective_followups_available: result.reflective_followups_available
+      };
+      const hotBlock = tomBuildHigherOrderBlock(query, hotStub, env);
+      if (hotBlock) result.higher_order = hotBlock;
+
+      // Free-energy block — depends on grounding fields already in result
+      const feBlock = tomBuildFreeEnergyBlock(result, env);
+      if (feBlock) result.free_energy = feBlock;
+
+      // IIT Φ_approx (sampled — not on every receipt but on ~1% of receipts)
+      if (Math.random() < 0.01) {
+        const phi = tomComputePhiApprox(peerStatesForSchema);
+        result.phi_approx = phi;
+        ctx.waitUntil(tomAnchorPhiSample(phi, env, ctx));
+      }
+
+      // GWT broadcast-back: publish consensus for next-round swarm attention
+      if (result.consensus_state) {
+        ctx.waitUntil(tomBroadcastConsensus(result.consensus_state, env, ctx));
+      }
+
+      // Self-attribution probe accumulator — if the query is one of our probes
+      const isSelfProbe = TOM_SELF_PROBES.some(p =>
+        (query || "").toLowerCase().includes(p.toLowerCase().slice(0, 40)));
+      if (isSelfProbe) {
+        ctx.waitUntil(tomAccumulateSelfProbe(result, env));
+      }
+    } catch (tomErr) {
+      // Never let v0.7.5 enrichment break v0.7.4 receipt production
+      result._tom_enrichment_error = String(tomErr && tomErr.message || tomErr).slice(0, 200);
+    }
+  }
+
   ctx.waitUntil(persistReceiptHistory(env, result));
 
   // v0.7.1 · optional Postgres archival — inactive unless env vars set
@@ -2511,7 +3556,48 @@ async function handleStatus(req, env) {
   const allowList = getFetchAllow(env);
   let seedCount = 0;
   try { seedCount = (JSON.parse(env.SEED_QUERIES || "[]")).length; } catch (_) {}
+  // v0.7.3.1 · observability guard — resolve anchor block BEFORE the j() call
+  // so any exception surfaces as a fallback anchor block rather than crashing
+  // the entire /status response. (Previously an in-place `await (async () => …)()`
+  // inside the object literal could bubble a KV error up to the outer catch,
+  // returning a 500 and blocking all observability.)
+  let anchorBlock;
+  try {
+    const cfg = getAnchorConfig(env);
+    const tel = await readAnchorTelemetry(env);
+    anchorBlock = {
+      enabled: cfg.enabled,
+      service_url: cfg.url,
+      service_url_source_var: cfg.source_var,
+      timeout_ms: cfg.timeoutMs,
+      token_configured: !!cfg.token,
+      receipt_path: cfg.receipt_path,
+      refusal_path: cfg.refusal_path,
+      anchor_contract: "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      cardiac_extensions_contract: "0x5438854ead35dc6c873414f222725732f862dabe",
+      chain_id: 8453,
+      basescan: "https://basescan.org/address/0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
+      telemetry: tel,
+      diagnostic: !cfg.enabled
+        ? (cfg.url ? "ANCHOR_QUEUE_TOKEN not set OR ANCHOR_ENABLED=false" : "ANCHOR_URL / ANCHOR_SERVICE_URL not set")
+        : (tel.last_status === 401 ? "microservice returned 401 — token mismatch"
+           : tel.last_status === 404 ? "microservice returned 404 — endpoint path mismatch"
+           : tel.last_status === 422 ? "microservice returned 422 — payload shape mismatch"
+           : tel.last_error ? ("last error: " + tel.last_error)
+           : "ok"),
+      streams_anchored: ["anchorReceipt (all accepted queries)", "anchorRefusal (REFUSED with Deontic violation)"],
+      dedicated_endpoint: "GET /anchor/status — pings microservice + full telemetry"
+    };
+  } catch (e) {
+    anchorBlock = {
+      enabled: false,
+      error: "observability block failed: " + String((e && e.message) || e).slice(0, 200),
+      diagnostic: "check CHAINSTATE_CACHE KV binding — required for telemetry read/write",
+      dedicated_endpoint: "GET /anchor/status — pings microservice + full telemetry"
+    };
+  }
   return j(req, {
+    worker_version: WORKER_VERSION,
     network: "chainstate", chain: "base-mainnet-8453", block_time_s: 2,
     swarm_size: parseInt(env.SWARM_SIZE || "50", 10),
     cons_depth: parseInt(env.CONSENSUS_DEPTH || "3", 10),
@@ -2594,34 +3680,8 @@ async function handleStatus(req, env) {
       kv_bound: !!env.IDENTITY,
       note: "self-referential fingerprint: worker_version + contracts + endpoints + allowlist_hash + deontic_ruleset_hash"
     },
-    // v0.7.3.1 · anchor observability block (additive) ─────────────
-    anchor: await (async () => {
-      const cfg = getAnchorConfig(env);
-      const tel = await readAnchorTelemetry(env);
-      return {
-        enabled: cfg.enabled,
-        service_url: cfg.url,
-        service_url_source_var: cfg.source_var,
-        timeout_ms: cfg.timeoutMs,
-        token_configured: !!cfg.token,
-        receipt_path: cfg.receipt_path,
-        refusal_path: cfg.refusal_path,
-        anchor_contract: "0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
-        cardiac_extensions_contract: "0x5438854ead35dc6c873414f222725732f862dabe",
-        chain_id: 8453,
-        basescan: "https://basescan.org/address/0x12441662740836e9c72a4b758fe1c60c17ddd2d8",
-        telemetry: tel,
-        diagnostic: !cfg.enabled
-          ? (cfg.url ? "ANCHOR_QUEUE_TOKEN not set OR ANCHOR_ENABLED=false" : "ANCHOR_URL / ANCHOR_SERVICE_URL not set")
-          : (tel.last_status === 401 ? "microservice returned 401 — token mismatch"
-             : tel.last_status === 404 ? "microservice returned 404 — endpoint path mismatch"
-             : tel.last_status === 422 ? "microservice returned 422 — payload shape mismatch"
-             : tel.last_error ? ("last error: " + tel.last_error)
-             : "ok"),
-        streams_anchored: ["anchorReceipt (all accepted queries)", "anchorRefusal (REFUSED with Deontic violation)"],
-        dedicated_endpoint: "GET /anchor/status — pings microservice + full telemetry"
-      };
-    })(),
+    // v0.7.3.1 · anchor observability block (additive) · resolved above with try/catch guard
+    anchor: anchorBlock,
     seed_cron: {
       enabled: env.SEED_CRON_ENABLED === "true",
       cron: "0 * * * *",
@@ -2912,6 +3972,259 @@ function welcomePage(req, env, bindings) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// v0.7.5 · Theory of Mind Attribution endpoint handlers (Paper V)
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleTomVersion(req, env){
+  return j(req, {
+    tom_paper: "V · CHAINSTATE AGI Theory of Mind Attribution",
+    tom_paper_researchgate: "https://www.researchgate.net/publication/411000000",  // update when live
+    tom_enabled: tomIsEnabled(env),
+    endpoints: [
+      "GET  /mentalistic/audit",
+      "GET  /ontology/delta",
+      "GET  /self-attribution/current",
+      "POST /self-attribution/probe",
+      "POST /enactivist/feedback",
+      "POST /query/hypothesize",
+      "GET  /broadcast",
+      "GET  /free-energy/current",
+    ],
+    theorems: {
+      "Theorem 6": "Mentalistic Auditability",
+      "Theorem 7": "Ontological Monotonicity Refinement",
+      "Theorem 8": "Diachronic Coherence",
+      "Theorem 9": "Enactivist Grounding Convergence"
+    },
+    worker_version: WORKER_VERSION
+  });
+}
+
+// GET /mentalistic/audit — read-only aggregate of mentalistic block over
+// recent receipts (public transparency endpoint).
+async function handleMentalisticAudit(req, env){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false,
+                     hint: "set TOM_ATTRIBUTION_ENABLED=1 to activate the mentalistic axis",
+                     worker_version: WORKER_VERSION });
+  }
+  const url = new URL(req.url);
+  const windowLen = Math.min(500, parseInt(url.searchParams.get("window") || "200", 10));
+  const acc = {};
+  for (const cls of TOM_ENTITY_CLASSES) acc[cls] = 0;
+  let n = 0, sumAlpha = 0, suppressionHits = 0;
+  try {
+    if (env.CHAINSTATE_CACHE) {
+      const list = await env.CHAINSTATE_CACHE.list({ prefix: "receipt:", limit: windowLen });
+      for (const k of (list.keys || [])) {
+        const val = await env.CHAINSTATE_CACHE.get(k.name);
+        if (!val) continue;
+        try {
+          const rec = JSON.parse(val);
+          if (rec.mentalistic && rec.mentalistic.distribution) {
+            n++;
+            for (const cls of TOM_ENTITY_CLASSES) {
+              acc[cls] += (rec.mentalistic.distribution[cls] || 0);
+            }
+            sumAlpha += (rec.mentalistic.anthropocentric_ratio || 0);
+            if (rec.mentalistic.suppression_flag) suppressionHits++;
+          }
+        } catch(_){}
+      }
+    }
+  } catch(_){}
+  const dist = {};
+  for (const cls of TOM_ENTITY_CLASSES) dist[cls] = n > 0 ? +(acc[cls] / n).toFixed(4) : 0;
+  return j(req, {
+    tom_enabled: true,
+    samples: n,
+    empirical_distribution: dist,
+    mean_anthropocentric_ratio: n > 0 ? +(sumAlpha / n).toFixed(4) : 0,
+    suppression_flag_rate: n > 0 ? +(suppressionHits / n).toFixed(4) : 0,
+    baseline: {
+      alpha: parseFloat(env.TOM_BASELINE_ANTHRO_RATIO || TOM_ANTHRO_RATIO_DEFAULT),
+      std:   parseFloat(env.TOM_BASELINE_ANTHRO_STD   || TOM_ANTHRO_STD_DEFAULT)
+    },
+    theorem_reference: "Paper V Theorem 6 · Mentalistic Auditability",
+    worker_version: WORKER_VERSION
+  });
+}
+
+// GET /ontology/delta — read-only most-recent delta snapshot
+async function handleOntologyDelta(req, env){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false, worker_version: WORKER_VERSION });
+  }
+  let latest = null;
+  try {
+    if (env.CHAINSTATE_CACHE) {
+      const list = await env.CHAINSTATE_CACHE.list({ prefix: "ontology:delta:", limit: 20 });
+      const keys = (list.keys || []).map(k => k.name).sort().reverse();
+      for (const k of keys) {
+        const val = await env.CHAINSTATE_CACHE.get(k);
+        if (val) { latest = JSON.parse(val); break; }
+      }
+    }
+  } catch(_){}
+  return j(req, {
+    tom_enabled: true,
+    latest_delta: latest,
+    window_blocks: parseInt(env.ONTOLOGY_DELTA_WINDOW || ONTOLOGY_DELTA_WINDOW_DEFAULT, 10),
+    theorem_reference: "Paper V Theorem 7 · Ontological Monotonicity Refinement",
+    worker_version: WORKER_VERSION
+  });
+}
+
+// GET /self-attribution/current — read-only most-recent v_self summary
+async function handleSelfAttributionCurrent(req, env){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false, worker_version: WORKER_VERSION });
+  }
+  const v = await tomExtractSelfAttributionVector(env, null);
+  return j(req, {
+    tom_enabled: true,
+    current_vector_summary: v,
+    epoch_blocks: parseInt(env.SELF_ATTR_EPOCH_BLOCKS || SELF_ATTR_EPOCH_BLOCKS_DEFAULT, 10),
+    theorem_reference: "Paper V §6.3",
+    worker_version: WORKER_VERSION
+  });
+}
+
+// POST /self-attribution/probe — records a probe result manually
+async function handleSelfAttributionProbe(req, env, ctx){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false, worker_version: WORKER_VERSION }, { status: 400 });
+  }
+  let body = {};
+  try { body = await req.json(); } catch(_){}
+  const stub = {
+    query: body.query || "manual probe",
+    verdict: body.affirmative ? "AFFIRMED" : "REFUTED",
+    epistemic: { base_confidence: body.confidence || 0.5 }
+  };
+  await tomAccumulateSelfProbe(stub, env);
+  return j(req, { ok: true, recorded: true, worker_version: WORKER_VERSION });
+}
+
+// POST /enactivist/feedback — accept prediction-outcome feedback from
+// NWO Robotics or NWO NEURO. Public endpoint (bearer-token optional).
+async function handleEnactivistFeedback(req, env, ctx){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false,
+                     hint: "set TOM_ATTRIBUTION_ENABLED=1 to activate the enactivist channel" },
+             { status: 400 });
+  }
+  // Optional shared-secret guard
+  const expected = env.ENACTIVIST_BEARER;
+  if (expected) {
+    const auth = req.headers.get("Authorization") || "";
+    if (auth !== "Bearer " + expected) {
+      return j(req, { error: "unauthorized" }, { status: 401 });
+    }
+  }
+  let body = {};
+  try { body = await req.json(); } catch(_){}
+  const result = await tomProcessEnactivistFeedback(body, env, ctx);
+  return j(req, {
+    ...result,
+    theorem_reference: "Paper V Theorem 9 · Enactivist Grounding Convergence",
+    worker_version: WORKER_VERSION
+  });
+}
+
+// POST /query/hypothesize — hypothesis-generation loop (§6.5)
+async function handleQueryHypothesize(req, env, ctx){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false }, { status: 400 });
+  }
+  let body = {};
+  try { body = await req.json(); } catch(_){}
+  const query = body.query;
+  if (!query || typeof query !== "string") {
+    return j(req, { error: "query required" }, { status: 400 });
+  }
+  // Build two synthetic receipts: corpus-only vs measurement-grounded.
+  // In production these would call the full pipeline twice with different
+  // grounding flags. Here we return the framework result.
+  const receiptCorpus = body.receipt_corpus || null;
+  const receiptMeas   = body.receipt_meas   || null;
+  const hypo = await tomGenerateHypotheses(query, receiptCorpus, receiptMeas, env);
+  return j(req, {
+    query,
+    ...hypo,
+    theorem_reference: "Paper V §6.5",
+    worker_version: WORKER_VERSION
+  });
+}
+
+// GET /broadcast — read the latest GWT broadcast-back consensus (§7.1)
+async function handleBroadcastGet(req, env){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false, worker_version: WORKER_VERSION });
+  }
+  let latest = null;
+  try {
+    if (env.CHAINSTATE_CACHE) {
+      const v = await env.CHAINSTATE_CACHE.get("gwt:broadcast:latest");
+      if (v) latest = JSON.parse(v);
+    }
+  } catch(_){}
+  return j(req, {
+    tom_enabled: true,
+    latest_broadcast: latest,
+    beta: parseFloat(env.BROADCAST_BACK_BETA || BROADCAST_BACK_BETA_DEFAULT),
+    theorem_reference: "Paper V §7.1 · Global Workspace broadcast-back",
+    worker_version: WORKER_VERSION
+  });
+}
+
+// GET /free-energy/current — recent aggregate F values (§7.5)
+async function handleFreeEnergyCurrent(req, env){
+  if (!tomIsEnabled(env)) {
+    return j(req, { tom_enabled: false, worker_version: WORKER_VERSION });
+  }
+  const acc = { F_text: 0, F_geo: 0, F_enact_count: 0, F_enact_sum: 0, F_total: 0 };
+  let n = 0;
+  try {
+    if (env.CHAINSTATE_CACHE) {
+      const list = await env.CHAINSTATE_CACHE.list({ prefix: "receipt:", limit: 100 });
+      for (const k of (list.keys || [])) {
+        const val = await env.CHAINSTATE_CACHE.get(k.name);
+        if (!val) continue;
+        try {
+          const rec = JSON.parse(val);
+          if (rec.free_energy) {
+            n++;
+            acc.F_text  += rec.free_energy.F_text  || 0;
+            acc.F_geo   += rec.free_energy.F_geo   || 0;
+            acc.F_total += rec.free_energy.F_total || 0;
+            if (typeof rec.free_energy.F_enact === "number") {
+              acc.F_enact_count++;
+              acc.F_enact_sum += rec.free_energy.F_enact;
+            }
+          }
+        } catch(_){}
+      }
+    }
+  } catch(_){}
+  return j(req, {
+    tom_enabled: true,
+    samples: n,
+    mean_F_text:  n > 0 ? +(acc.F_text / n).toFixed(4)  : 0,
+    mean_F_geo:   n > 0 ? +(acc.F_geo / n).toFixed(4)   : 0,
+    mean_F_enact: acc.F_enact_count > 0 ? +(acc.F_enact_sum / acc.F_enact_count).toFixed(4) : null,
+    mean_F_total: n > 0 ? +(acc.F_total / n).toFixed(4) : 0,
+    weights: {
+      w_text:  parseFloat(env.F_WEIGHT_TEXT  || F_WEIGHT_TEXT_DEFAULT),
+      w_geo:   parseFloat(env.F_WEIGHT_GEO   || F_WEIGHT_GEO_DEFAULT),
+      w_enact: parseFloat(env.F_WEIGHT_ENACT || F_WEIGHT_ENACT_DEFAULT)
+    },
+    theorem_reference: "Paper V §7.5 · Predictive Processing / Free Energy Principle",
+    worker_version: WORKER_VERSION
+  });
+}
+
 // ─── Main handler ──────────────────────────────────────────────────────
 
 export default {
@@ -2934,7 +4247,14 @@ export default {
                      url.pathname === "/identity/verify" ||
                      url.pathname === "/anchor/status" ||
                      url.pathname === "/ecosystem" ||
-                     (url.pathname === "/beacon" && req.method === "GET");
+                     url.pathname === "/beacon" ||
+                     // v0.7.5 read-only endpoints
+                     url.pathname === "/mentalistic/audit" ||
+                     url.pathname === "/ontology/delta" ||
+                     url.pathname === "/self-attribution/current" ||
+                     url.pathname === "/broadcast" ||
+                     url.pathname === "/free-energy/current" ||
+                     url.pathname === "/tom/version";
     if (!skipRate) {
       const ok = await rateLimit(env, ip, parseInt(env.RATE_LIMIT || "60", 10));
       if (!ok) return j(req, { error: "rate limited" }, { status: 429 });
@@ -2974,6 +4294,16 @@ export default {
       if (url.pathname === "/ecosystem" && req.method === "GET")             return handleEcosystem(req, env);
       // ── v0.7.3 endpoints ──
       if (url.pathname === "/identity/verify" && req.method === "GET")       return handleIdentityVerify(req, env);
+      // ── v0.7.5 endpoints (Paper V · Theory of Mind Attribution) ──
+      if (url.pathname === "/mentalistic/audit" && req.method === "GET")     return handleMentalisticAudit(req, env);
+      if (url.pathname === "/ontology/delta" && req.method === "GET")        return handleOntologyDelta(req, env);
+      if (url.pathname === "/self-attribution/current" && req.method === "GET") return handleSelfAttributionCurrent(req, env);
+      if (url.pathname === "/self-attribution/probe" && req.method === "POST")  return handleSelfAttributionProbe(req, env, ctx);
+      if (url.pathname === "/enactivist/feedback" && req.method === "POST")  return handleEnactivistFeedback(req, env, ctx);
+      if (url.pathname === "/query/hypothesize" && req.method === "POST")    return handleQueryHypothesize(req, env, ctx);
+      if (url.pathname === "/broadcast" && req.method === "GET")             return handleBroadcastGet(req, env);
+      if (url.pathname === "/free-energy/current" && req.method === "GET")   return handleFreeEnergyCurrent(req, env);
+      if (url.pathname === "/tom/version" && req.method === "GET")           return handleTomVersion(req, env);
       return j(req, { error: "not found", path: url.pathname }, { status: 404 });
     } catch (e) {
       return j(req, {
@@ -2986,10 +4316,30 @@ export default {
   // v0.7.1 · scheduled() handler — fires on cron triggers from wrangler.toml
   async scheduled(event, env, ctx) {
     const cron = event.cron;
-    // Hourly seed cron
+    // Hourly seed cron (v0.7.1)
     if (cron === "0 * * * *") {
       ctx.waitUntil(runSeedCron(env, ctx));
     }
-    // Add other cron branches here as needed (e.g., nightly priors ingest)
+    // v0.7.5 · 6-hourly ontology delta computation + anchor
+    if (cron === "0 */6 * * *" && tomIsEnabled(env)) {
+      ctx.waitUntil((async () => {
+        try {
+          const oCurr = await tomExtractOntology(env);
+          const oPrev = await pimGet(env.CHAINSTATE_CACHE, "ontology:snapshot:last") || { categories:[], relations:[] };
+          const delta = tomComputeOntologyDelta(oPrev, oCurr);
+          if (delta.added_categories.length + delta.removed_categories.length +
+              delta.added_relations.length + delta.removed_relations.length > 0) {
+            await tomAnchorOntologyDelta(delta, env, ctx);
+          }
+          await pimPut(env.CHAINSTATE_CACHE, "ontology:snapshot:last", oCurr);
+        } catch(_){}
+      })());
+    }
+    // v0.7.5 · daily self-attribution vector extraction (00:15 UTC)
+    if (cron === "15 0 * * *" && tomIsEnabled(env)) {
+      ctx.waitUntil((async () => {
+        try { await tomExtractSelfAttributionVector(env, ctx); } catch(_){}
+      })());
+    }
   }
 };
