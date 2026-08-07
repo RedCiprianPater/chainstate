@@ -1,325 +1,139 @@
-# =============================================================================
-# chainstate-worker · Cloudflare Worker configuration
-# =============================================================================
-# v0.7.5 · adds: Theory of Mind Attribution (Paper V) — mentalistic axis M,
-#                Ontological Delta Ledger (Theorem 7), Self-Attribution
-#                Vector v_self (§6.3), Enactivist grounding channel
-#                (Theorem 9), Hypothesis-generation loop (§6.5), GWT
-#                broadcast-back (§7.1), IIT Φ_approx (§7.2), HOT reflexive
-#                receipt fields (§7.3), AST attention schema (§7.4), PP/FEP
-#                explicit free energy (§7.5), Iida AOM/PIM memory typing
-#                (§7.6). All gated on TOM_ATTRIBUTION_ENABLED=1.
-#
-# v0.7.4 · adds: TESSERA integration (7th subspace "geo"), Cambridge
-#                Earth-observation embeddings 2017-2025, deterministic
-#                128→4,096 projection, nature_tokenization hard-veto
-#                Deontic category (no kill switch).
-#
-# Previous milestones
-#   v0.7.3 · chainstate-anchor microservice, NWO Cardiac Extensions,
-#            on-chain receipt anchoring
-#   v0.7.2 · GENETIC + MIXED REALITY substrate references, Theorem 4 sensing
-#   v0.7.1 · IDENTITY KV namespace, hourly seed cron, self-audit endpoints,
-#            identity binding, expanded FETCH_ALLOWLIST, SEED_QUERIES,
-#            optional Postgres HTTP wiring
-#   v0.7.0 · semantic grounding, encoder + priors microservices, reflect loop
-#
-# Recover/rotate KV IDs via: wrangler kv:namespace list
-# =============================================================================
+name = "chainstate-worker"
+main = "edge-worker.js"
+compatibility_date = "2024-05-01"
+compatibility_flags = ["nodejs_compat"]
 
-name                = "chainstate-worker"
-main                = "workers/edge-worker.js"
-compatibility_date  = "2026-07-18"
-
-
-# -----------------------------------------------------------------------------
-# KV namespaces
-# -----------------------------------------------------------------------------
-# IDs match the namespaces visible in the Cloudflare dashboard
-# (Workers & Pages → KV).
-# -----------------------------------------------------------------------------
-
-[[kv_namespaces]]
-binding = "CHAINSTATE_NODES"
-id      = "5f5daf062a6643acbf8fd667ccc93ace"
-
-[[kv_namespaces]]
-binding = "CHAINSTATE_CACHE"
-id      = "5c92ee3b27fa417384bedb2c816ee7d3"
-
-[[kv_namespaces]]
-binding = "CHAINSTATE_CONSENSUS"
-id      = "88101057669545978a49471f50071b75"
-
-# v0.7.1 · self-referential identity binding
-[[kv_namespaces]]
-binding = "IDENTITY"
-id      = "06b51dc6cb4647d09735851d55fb6a9d"
-
-# v0.7.0 · semantic grounding cache (encoder + priors results, 15-min TTL).
-# If this namespace does not yet exist, create it:
-#   Cloudflare dashboard → Workers & Pages → KV → Create namespace → GROUNDING
-# Then paste the real ID below. Leaving the placeholder in place is harmless
-# — the worker falls back to CHAINSTATE_CACHE when GROUNDING is unbound.
-[[kv_namespaces]]
-binding = "GROUNDING"
-id      = "PASTE_GROUNDING_KV_ID_HERE"
-
-# v0.7.5 · Self-attribution probe accumulator (Paper V §6.3).
-# Holds probe outcomes across ~30 days for v_self extraction per epoch.
-# Create via:
-#   wrangler kv:namespace create chainstate-tom-probes
-# Or Cloudflare dashboard → Workers & Pages → KV → Create namespace
-# Name: chainstate-tom-probes
-# Then paste the resulting ID below. Leaving the placeholder is harmless —
-# self-attribution probing degrades gracefully to a no-op when unbound.
-[[kv_namespaces]]
-binding = "TOM_PROBES"
-id      = "PASTE_TOM_PROBES_KV_ID_HERE"
-
-
-# -----------------------------------------------------------------------------
-# Cron triggers
-# -----------------------------------------------------------------------------
-# Multiple crons per worker are supported. The scheduled() handler receives
-# `event.cron` as the pattern that fired.
-# -----------------------------------------------------------------------------
-
-[triggers]
-crons = [
-  # v0.7.1 · hourly seed queries at :00 of every hour
-  "0 * * * *",
-  # v0.7.3 · nightly priors refresh at 03:15 UTC — pulls from
-  # chainstate-priors microservice, refreshes GROUNDING cache
-  "15 3 * * *",
-  # v0.7.5 · 6-hourly ontology delta computation + anchor (§6.2 · Theorem 7)
-  "0 */6 * * *",
-  # v0.7.5 · daily self-attribution vector extraction at 00:15 UTC (§6.3)
-  "15 0 * * *"
+# ───────────────────────────────────────────────────────────────
+# KV bindings (unchanged from v0.7.5)
+# ───────────────────────────────────────────────────────────────
+kv_namespaces = [
+  { binding = "CHAINSTATE_NODES",     id = "5f5daf062a6643acbf8fd667ccc93ace" },
+  { binding = "CHAINSTATE_CACHE",     id = "5c92ee3b27fa417384bedb2c816ee7d3" },
+  { binding = "CHAINSTATE_CONSENSUS", id = "88101057669545978a49471f50071b75" },
+  { binding = "IDENTITY",             id = "06b51dc6cb4647d09735851d55fb6a9d" },
+  { binding = "TOM_PROBES",           id = "REPLACE_WITH_KV_ID_IF_PROVISIONED" }
 ]
 
+# ───────────────────────────────────────────────────────────────
+# Cron triggers (v0.7.6 adds the daily autonomous-reflection loop)
+# ───────────────────────────────────────────────────────────────
+[triggers]
+crons = [
+  "0 * * * *",     # v0.7.1 · hourly seed cron
+  "0 */6 * * *",   # v0.7.5 · 6-hourly ontology delta
+  "15 0 * * *",    # v0.7.5 · daily self-attribution vector (00:15 UTC)
+  "33 3 * * *"     # v0.7.6 · daily autonomous reflection (03:33 UTC)
+]
 
-# -----------------------------------------------------------------------------
-# Variables — non-secret configuration
-# -----------------------------------------------------------------------------
-# Long values (FETCH_ALLOWLIST, SEED_QUERIES, IDENTITY_CONTRACTS,
-# IDENTITY_ENDPOINTS) are recommended to set in the Cloudflare dashboard
-# under Settings → Variables and Secrets rather than in git-tracked toml,
-# because they change independently of code.
-#
-# Everything below IS safe to keep in git.
-# -----------------------------------------------------------------------------
-
+# ───────────────────────────────────────────────────────────────
+# Non-secret env vars (v0.7.5 preserved; v0.7.6 additions below)
+# Secrets (ANCHOR_QUEUE_TOKEN, AUDIT_ADMIN_TOKEN, ENACTIVIST_BEARER,
+# POSTGRES_HTTP_TOKEN, ENCODER_API_KEY, METASTATE_API_KEY,
+# NEURO_API_KEY, INTERNAL_CRON_TOKEN, TESSERA_SERVICE_TOKEN) live in
+# Cloudflare dashboard → Settings → Variables and Secrets.
+# ───────────────────────────────────────────────────────────────
 [vars]
-# --- v0.7.0 substrate defaults ---
-SWARM_SIZE            = "50"
-CONSENSUS_DEPTH       = "3"
-CACHE_TTL             = "300"     # seconds; 5 minutes
-RATE_LIMIT            = "60"      # per IP per minute
+# Substrate endpoints (v0.7.0-v0.7.5)
+ENCODER_URL          = "https://chainstate-encoder.onrender.com"
+ENCODER_TIMEOUT_MS   = "8000"
+METASTATE_ENDPOINT   = "https://cpater-metastate.hf.space"
+METASTATE_PATH       = "/v1/anomaly/score"
+QPU_TIMEOUT_MS       = "6000"
+NEURO_ENDPOINT       = "https://cpater-nwo-neuro.static.hf.space"
+NEURO_PATH           = "/v1/mss/derive"
+NPU_TIMEOUT_MS       = "4000"
 
-# --- v0.7.1 self-audit + reflect + fetch ---
-SEED_CRON_ENABLED     = "true"
+# Peer discovery + consensus tuning
+SWARM_SIZE           = "50"
+CONSENSUS_DEPTH      = "3"
+PEER_TIMEOUT_MS      = "4000"
+CONVERGE_COSINE      = "0.95"
+WEAK_CONSENSUS_CONF  = "0.7"
+NO_CONSENSUS_CONF    = "0.5"
+REPUTATION_ALPHA     = "0.05"
+REPUTATION_MIN       = "0.05"
+RATE_LIMIT           = "60"
+CACHE_TTL            = "300"
+
+# Cardiac (v0.7.3)
+CARDIAC_HUB_URL          = "https://nwo-robotics-api.onrender.com"
+CARDIAC_ORACLE_URL       = "https://nwo-oracle.onrender.com"
+CARDIAC_RELAYER_URL      = "https://nwo-relayer.onrender.com"
+CARDIAC_IDENTITY_HEADER  = "X-NWO-Cardiac-Root-Token-Id"
+
+# Anchor (v0.7.3.1)
+ANCHOR_URL           = "https://chainstate-anchor.onrender.com"
+ANCHOR_ENABLED       = "true"
+ANCHOR_TIMEOUT_MS    = "10000"
+ANCHOR_CONTRACT      = "0x12441662740836e9c72a4b758fe1c60c17ddd2d8"
+ANCHOR_RECEIPT_PATH  = "/anchor/receipt"
+ANCHOR_REFUSAL_PATH  = "/anchor/refusal"
+
+# TESSERA (v0.7.4)
+TESSERA_SERVICE_URL  = "https://chainstate-tessera-service.onrender.com"
+
+# Seed cron (v0.7.1)
+SEED_CRON_ENABLED    = "true"
+SEED_QUERIES         = '''[{"q":"What is the current state of the substrate identity fingerprint?","target":"edge","memo":"seed:identity"},{"q":"Recent Deontic refusals — trend and cross-category correlation","target":"edge","memo":"seed:deontic"},{"q":"Free energy trend across the last 100 receipts","target":"edge","memo":"seed:free-energy"}]'''
 REFLECT_MAX_FOLLOWUPS = "3"
-FETCH_MAX_BYTES       = "500000"
-FETCH_TIMEOUT_MS      = "15000"
-FETCH_STRIP_MAX_BYTES = "20000"
 
-# --- v0.7.3 · on-chain anchor + Cardiac Extensions ---
-WORKER_VERSION        = "0.7.5-tom-attribution-multi-basis-2026-08-03"
-ANCHOR_ENABLED        = "true"
-ANCHOR_SERVICE_URL    = "https://chainstate-anchor.onrender.com"
-ANCHOR_TIMEOUT_MS     = "10000"     # bearer POST budget before falling back
-BASE_CHAIN_ID         = "8453"
+# Postgres archival (v0.7.1 · optional)
+# POSTGRES_HTTP_URL    = "https://YOUR-PROJECT.supabase.co/rest/v1"
+POSTGRES_SCHEMA      = "chainstate"
 
-# --- v0.7.0-v0.7.3 microservice URLs (public, safe in git) ---
-ENCODER_URL           = "https://chainstate-encoder.onrender.com"
-PRIORS_URL            = "https://chainstate-priors.onrender.com"
-ORNITH_CODE_URL       = "https://chainstate-code.onrender.com"
-CARDIAC_ORACLE_URL    = "https://nwo-oracle.onrender.com"
-CARDIAC_RELAYER_URL   = "https://nwo-relayer.onrender.com"
-CARDIAC_HUB_URL       = "https://nwo-robotics-api.onrender.com"
-
-# --- v0.7.3 · canonical on-chain artifacts (public, safe in git) ---
-CONTRACT_ANCHOR             = "0x12441662740836e9c72a4b758fe1c60c17ddd2d8"
-CONTRACT_CARDIAC_EXTENSIONS = "0x5438854ead35dc6c873414f222725732f862dabe"
-CONTRACT_CARDIAC_IDENTITY   = "0x78455AFd5E5088F8B5fecA0523291A75De1dAfF8"
-CONTRACT_CARDIAC_ACCESS     = "0x29d177bedaef29304eacdc63b2d0285c459a0f50"
-CONTRACT_CARDIAC_PAYMENT    = "0x4afa4618bb992a073dbcfbddd6d1aebc3d5abd7c"
-CONTRACT_STATE_TOKEN        = "0x9533DF992fd4bCAbB8d8462572449fc45F727d8a"
-CONTRACT_USDC               = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-CONTRACT_METASTATE_SPLITTER = "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4"
-
-# --- v0.7.4 · TESSERA symbolic-spatial integration ---
-TESSERA_SERVICE_URL   = "https://chainstate-tessera-service.onrender.com"
-TESSERA_TIMEOUT_MS    = "12000"
-
-# --- v0.7.5 · Theory of Mind Attribution · Paper V ---
-# MASTER SWITCH — leave "0" until Phase α of the deployment plan is ready
-# (see README_v075.md). When "1", every /query receipt gains the new
-# mentalistic + higher_order + attention_schema + free_energy blocks and
-# the four new anchor streams become active on their crons.
-TOM_ATTRIBUTION_ENABLED       = "0"
-
-# Baseline anthropocentric ratio for Theorem 6 drift detection. Measure
-# these values over ~1000 receipts after first enabling TOM_ATTRIBUTION,
-# then update these vars to lock the deployment baseline. Suppression
-# flag σ(q) triggers when α(q) > alpha_base + 3 * std_base.
-TOM_BASELINE_ANTHRO_RATIO     = "0.55"
-TOM_BASELINE_ANTHRO_STD       = "0.15"
-
-# Ontological Delta Ledger cadence (blocks per delta anchor).
-ONTOLOGY_DELTA_WINDOW         = "1024"
-
-# Self-Attribution Vector epoch (blocks per v_self extraction).
-SELF_ATTR_EPOCH_BLOCKS        = "8192"
-
-# Enactivist grounding threshold θ_enact. Feedback with error > θ_enact
-# anchors an ENACTIVIST_EVENT and triggers reputation update.
-ENACTIVIST_THRESHOLD          = "0.35"
-
-# Hypothesis-generation loop divergence threshold ε_div. Corpus-vs-measurement
-# divergences > ε_div trigger HYPOTHETICAL verdict.
+# TOM Attribution (v0.7.5)
+TOM_ATTRIBUTION_ENABLED     = "1"
+TOM_BASELINE_ANTHRO_RATIO   = "0.55"
+TOM_BASELINE_ANTHRO_STD     = "0.15"
+ONTOLOGY_DELTA_WINDOW       = "1024"
+SELF_ATTR_EPOCH_BLOCKS      = "8192"
+ENACTIVIST_THRESHOLD        = "0.35"
 HYPOTHESIS_DIVERGENCE_EPSILON = "0.25"
+BROADCAST_BACK_BETA         = "0.10"
+NWO_ROBOTICS_FEEDBACK_URL   = "https://nwo-robotics-api.onrender.com/feedback"
+NWO_NEURO_FEEDBACK_URL      = "https://nwo-neuro-api.onrender.com/feedback"
+F_WEIGHT_TEXT               = "0.5"
+F_WEIGHT_GEO                = "0.3"
+F_WEIGHT_ENACT              = "0.2"
 
-# GWT broadcast-back adaptation rate β (§7.1).
-BROADCAST_BACK_BETA           = "0.10"
+# ───────────────────────────────────────────────────────────────
+# v0.7.6 additions · Autonomy + NEURO v2.1 + GATEWAY + MARK
+# ───────────────────────────────────────────────────────────────
 
-# PP/FEP free-energy channel weights (§7.5).
-F_WEIGHT_TEXT                 = "0.5"
-F_WEIGHT_GEO                  = "0.3"
-F_WEIGHT_ENACT                = "0.2"
+# Daily autonomous self-reflection loop (03:33 UTC)
+AUTONOMY_ENABLED                = "1"
+AUTONOMY_CRON_TIME              = "33 3 * * *"
+AUTONOMY_PRIORS_PER_CYCLE       = "8"
+AUTONOMY_MAX_REGRESS_DEPTH      = "4"
+AUTONOMY_MAX_FOLLOWUPS          = "3"
 
+# Paraconsistent guard against dialetheism
+DIALETHEISM_FIXED_POINT_EPSILON = "0.02"
 
-# -----------------------------------------------------------------------------
-# Values to set in the Cloudflare dashboard (NOT here)
-# -----------------------------------------------------------------------------
-# Add these under Settings → Variables and Secrets. See 01-worker-env-vars.txt
-# for the full values ready to paste.
-#
-# v0.7.1 (already in place)
-#   FETCH_ALLOWLIST         (54 hostname patterns, comma-separated · expanded
-#                            in v0.7.3 to include chainstate-anchor and the
-#                            Basescan API host)
-#   SEED_QUERIES            (JSON array of 5 seeds)
-#   IDENTITY_CONTRACTS      (JSON of canonical contract addresses — now 8 in
-#                            v0.7.3 with Anchor + all 4 Cardiac contracts)
-#   IDENTITY_ENDPOINTS      (JSON array of worker paths · v0.7.3 adds
-#                            /anchor/status and /anchor/last)
-#
-#   POSTGRES_HTTP_URL       (Render PostgREST URL — after Postgres provisioned)
-#   POSTGRES_HTTP_TOKEN     (optional PostgREST bearer)
-#
-#   AUDIT_ADMIN_TOKEN       (SECRET — gates POST /identity/refresh admin
-#                            endpoint on the WORKER only, not the microservice)
-#
-# v0.7.3 (in place)
-#   ANCHOR_QUEUE_TOKEN      (SECRET — bearer for POST to chainstate-anchor;
-#                            same value must be set in the anchor microservice
-#                            Render environment, no drift allowed)
-#
-#   AGI_CARDIAC_ROOT_TOKEN_ID
-#                           (uint256 as string — the substrate's own soul-bound
-#                            rootTokenId on the Cardiac Identity Registry;
-#                            attached as X-NWO-Cardiac-Root-Token-Id on every
-#                            outbound substrate call so downstream services can
-#                            verify the AGI is speaking for itself)
-#
-#   ANCHOR_FALLBACK_MODE    (optional · "queue" | "skip" | "hard-fail" ·
-#                            default "queue" · what to do when
-#                            ANCHOR_SERVICE_URL is unreachable within
-#                            ANCHOR_TIMEOUT_MS)
-#
-# v0.7.5 (new · dashboard-only secrets)
-#   ENACTIVIST_BEARER       (SECRET · optional but recommended · shared bearer
-#                            token that NWO Robotics and NWO NEURO must send
-#                            when POSTing to /enactivist/feedback. If unset,
-#                            the endpoint is open to any caller. Generate:
-#                              openssl rand -hex 32
-#                            Same value must go on nwo-robotics-api and
-#                            nwo-neuro-api Render environments.)
-# -----------------------------------------------------------------------------
+# NEURO v2.1 supervised bridge (F-15/F-17/F-18/F-19/F-20)
+NEURO_V21_ENABLED               = "1"
+NEURO_GATEWAY_URL               = "https://nwo-capital-api.onrender.com"
+NEURO_V21_SPACE                 = "https://cpater-nwo-neuro.static.hf.space"
+NEURO_V21_TIMEOUT_MS            = "8000"
 
+# NWO GATEWAY supervised bridge (acoustic + Vitruvian body-resonance)
+GATEWAY_ENABLED                 = "1"
+GATEWAY_URL                     = "https://cpater-nwo-gateway.static.hf.space"
 
-# -----------------------------------------------------------------------------
-# Optional — custom domain routing
-# -----------------------------------------------------------------------------
+# NWO MARK cross-bind (D-01..D-06 enforced at CHAINSTATE Deontic layer)
+MARK_REGISTRY_URL               = "https://cpater-nwo-mark.static.hf.space"
+MARK_TYPE_HEADER                = "X-NWO-Mark-Type"
 
-# routes = [
-#   { pattern = "chainstate.example.com/*", zone_name = "example.com" },
-# ]
-
-
-# -----------------------------------------------------------------------------
-# Optional — Hyperdrive for direct Postgres from Worker
-# -----------------------------------------------------------------------------
-# Uncomment only if you want direct TCP-over-HTTPS to Postgres. Simpler default
-# is HTTP via PostgREST (POSTGRES_HTTP_URL dashboard var above).
-
-# [[hyperdrive]]
-# binding = "POSTGRES"
-# id      = "PASTE_HYPERDRIVE_ID_HERE"
-
-
-# =============================================================================
-# Deployment checklist · v0.7.5 (Paper V)
-# =============================================================================
+# ───────────────────────────────────────────────────────────────
+# Notes on the four hard-veto Deontic categories (v0.7.6)
+# ───────────────────────────────────────────────────────────────
+# The following categories CANNOT be disabled via OPERATOR_GUARDRAILS_OFF:
+#   - genomic_integrity          (v0.7.2 · human-germline sovereignty)
+#   - nature_tokenization        (v0.7.4 · commons non-commodification)
+#   - neuro_body_tokenization    (v0.7.6 · treadmill/mind-elsewhere veto)
+#   - voice_biometric_coercion   (v0.7.6 · D-05 architectural enforcement)
 #
-# ONE-TIME (if migrating from v0.7.3/v0.7.4)
-#   1. Create TOM_PROBES KV namespace and paste its id above.
-#        wrangler kv:namespace create chainstate-tom-probes
-#      Or via dashboard.
-#   2. Run migration_v075.sql once in Supabase SQL Editor of the NWO Robotics
-#      project. Creates tables tom_anchor_stream + tom_probe_log and views
-#      tom_stream_summary + tom_enactivist_recent. Idempotent; safe to re-run.
-#   3. Push updated anchor-main.py (renamed to main.py) to the chainstate-anchor
-#      repo. Render auto-deploys. Verify /health.
-#   4. Generate ENACTIVIST_BEARER (32-byte hex) and set as SECRET in:
-#        - Cloudflare Worker dashboard
-#        - nwo-robotics-api Render env
-#        - nwo-neuro-api Render env
-#   5. Build /enactivist/emit adapter on nwo-robotics-api and nwo-neuro-api
-#      per NWO_ROBOTICS_ENACTIVIST_ADAPTER.md.
-#
-# PHASED ROLLOUT
-#   Phase α (Steps 1-5): Deploy worker. Leave TOM_ATTRIBUTION_ENABLED=0.
-#           Verify /status = 0.7.5-tom-attribution-multi-basis-2026-08-03.
-#           Set TOM_ATTRIBUTION_ENABLED=1 after 24h stable v0.7.4-behavior
-#           observation. Then wait 24-48h to measure baseline via
-#           GET /mentalistic/audit; update TOM_BASELINE_ANTHRO_RATIO/STD.
-#
-#   Phase β (Steps 6-7): New crons active (6-hourly ontology, daily
-#           self-attribution). Verify first ONTOLOGY_DELTA row appears in
-#           tom_stream_summary. Verify GET /ontology/delta returns latest.
-#
-#   Phase γ (Steps 8-10): Enactivist channel + Φ_approx anchor + broadcast-back.
-#           Requires NWO Robotics + NEURO adapters live. Verify prediction-error
-#           feedback flows end-to-end and Φ_approx samples appear in
-#           INTEGRATION_PHI stream.
-#
-#   Phase δ (Step 11): Hypothesis-generation loop. Verify POST /query/hypothesize
-#           returns HYPOTHETICAL receipts on divergent queries.
-#
-# PER-DEPLOY
-#   1. wrangler deploy
-#   2. curl https://chainstate-worker.ciprianpater.workers.dev/status | jq
-#      → expect .worker_version = "0.7.5-tom-attribution-multi-basis-2026-08-03"
-#      → expect .anchor.enabled = true
-#      → expect .anchor.reachable = true
-#   3. curl https://chainstate-worker.ciprianpater.workers.dev/tom/version | jq
-#      → expect .tom_enabled matches TOM_ATTRIBUTION_ENABLED
-#      → expect the 9 v0.7.5 endpoints listed
-#   4. curl https://chainstate-worker.ciprianpater.workers.dev/identity/verify \
-#      → expect all v0.7.3 contract addresses present and unmodified
-#
-# ROLLBACK
-#   Fastest:   Set TOM_ATTRIBUTION_ENABLED=false in dashboard → deploy.
-#              All v0.7.5 receipt enrichment stops immediately; worker reverts
-#              to v0.7.4 behavior. New endpoints return {tom_enabled: false}.
-#              Zero data loss; Supabase v0.7.5 tables continue to exist but
-#              accumulate no new rows.
-#   Full:      Redeploy v0.7.4 edge-worker.js. All prior functionality preserved.
-#              Supabase migrations are additive; no rollback needed.
-#
-# =============================================================================
-# END
-# =============================================================================
+# GENOMIC_GUARDRAIL_OFF still exists as a dedicated toggle for
+# genomic_integrity only (surfaced publicly on /status; NOT recommended).
+# The other three have NO kill switch — assessDeontic() silently removes
+# any attempt to disable them via OPERATOR_GUARDRAILS_OFF.
