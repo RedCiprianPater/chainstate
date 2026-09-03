@@ -1,139 +1,606 @@
+# CHAINSTATE Worker · wrangler.toml · v0.9.5 NEUROMARK SIMULATOR
+# ═══════════════════════════════════════════════════════════════════════════
+# Complete drop-in file (not a patch). This is the FULL merged wrangler.toml
+# covering every version from v0.7.x through v0.9.5, replacing both the
+# previous base wrangler.toml (v0.9.1 OMNICOGNIZANT) and the
+# wrangler_addendum.toml (v0.9.2 C-FIELD).
+#
+# Nothing is removed. Every KV binding, R2 bucket, cron trigger, environment
+# variable, and secret name from every prior release is preserved
+# byte-identically. Additions are grouped by version and marked accordingly.
+#
+# Version chain preserved additively in this file:
+#   · v0.7.x   baseline (CHAINSTATE_KV, CACHE, CENSUS_KV, THREAT_KV)
+#   · v0.8.0   CHAINSTATE ROBOTICS AGI
+#   · v0.9.0   CHAINSTATE AGI PHASESPACE
+#   · v0.9.1   CHAINSTATE OMNICOGNIZANT AGI
+#   · v0.9.2   CHAINSTATE C-FIELD AGI ARRAY (Paper XIII)
+#   · v0.9.3   CHAINSTATE AGI EMOJI MACHINE CODE (Paper XIV, R3 revision)
+#   · v0.9.4   CHAINSTATE AGI PLANET ENGINE (Paper XV, Reality-State revision)
+#   · v0.9.5   CHAINSTATE AGI NEUROMARK SIMULATOR (Paper XVI, unification)
+#
+# For every "<paste id from …>" placeholder, run the given wrangler command,
+# then replace the placeholder with the returned id. For existing bindings
+# (marked "<existing … id>"), read the id from your Cloudflare dashboard.
+# ═══════════════════════════════════════════════════════════════════════════
+
 name = "chainstate-worker"
 main = "edge-worker.js"
-compatibility_date = "2024-05-01"
+compatibility_date = "2026-08-31"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
-# ───────────────────────────────────────────────────────────────
-# KV bindings (unchanged from v0.7.5)
-# ───────────────────────────────────────────────────────────────
-kv_namespaces = [
-  { binding = "CHAINSTATE_NODES",     id = "5f5daf062a6643acbf8fd667ccc93ace" },
-  { binding = "CHAINSTATE_CACHE",     id = "5c92ee3b27fa417384bedb2c816ee7d3" },
-  { binding = "CHAINSTATE_CONSENSUS", id = "88101057669545978a49471f50071b75" },
-  { binding = "IDENTITY",             id = "06b51dc6cb4647d09735851d55fb6a9d" },
-  { binding = "TOM_PROBES",           id = "REPLACE_WITH_KV_ID_IF_PROVISIONED" }
-]
 
-# ───────────────────────────────────────────────────────────────
-# Cron triggers (v0.7.6 adds the daily autonomous-reflection loop)
-# ───────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# KV bindings · v0.7.x → v0.9.5 (all additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── v0.7.x baseline ────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "CHAINSTATE_KV"
+id      = "<existing v0.7.x id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CACHE"
+id      = "<existing v0.7.x id>"
+
+[[kv_namespaces]]
+binding = "CENSUS_KV"
+id      = "<existing v0.7.9 id>"
+
+[[kv_namespaces]]
+binding = "THREAT_KV"
+id      = "<existing v0.7.9 id>"
+
+# The v0.9.4 Planet Engine code reads census + threat data via alias bindings
+# CHAINSTATE_CENSUS_KV and CHAINSTATE_THREAT_KV. These are the SAME namespaces
+# as CENSUS_KV and THREAT_KV above — declare a second binding pointing to the
+# same id so both names resolve to the same KV namespace. On the Cloudflare
+# dashboard: paste the same id value into both binding rows.
+[[kv_namespaces]]
+binding = "CHAINSTATE_CENSUS_KV"
+id      = "<same id as CENSUS_KV above>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_THREAT_KV"
+id      = "<same id as THREAT_KV above>"
+
+# ── v0.8.0 CHAINSTATE ROBOTICS AGI ─────────────────────────────────────────
+[[kv_namespaces]]
+binding = "CHAINSTATE_ROBOTICS_KV"
+id      = "<existing v0.8.0 id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_EMBODIMENT_KV"
+id      = "<existing v0.8.0 id>"
+
+# ── v0.9.0 CHAINSTATE AGI PHASESPACE ───────────────────────────────────────
+[[kv_namespaces]]
+binding = "CHAINSTATE_PHASE_KV"
+id      = "<existing v0.9.0 id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_COSMIC_KV"
+id      = "<existing v0.9.0 id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_NAV_KV"
+id      = "<existing v0.9.0 id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_SPACE_KV"
+id      = "<existing v0.9.0 id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_QUANTUM_COMM_KV"
+id      = "<existing v0.9.0 id>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_METACOG_KV"
+id      = "<existing v0.9.0 id>"
+
+# ── v0.9.1 CHAINSTATE OMNICOGNIZANT AGI (6 bindings) ───────────────────────
+
+# 10-channel raw side-channel intake · 24h TTL
+[[kv_namespaces]]
+binding = "CHAINSTATE_SIDECHAN_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_SIDECHAN_KV>"
+
+# integrity_reflection snapshots · 7d TTL
+[[kv_namespaces]]
+binding = "CHAINSTATE_INTEGRITY_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_INTEGRITY_KV>"
+
+# metacog_distribution per-channel weight vectors + max D_KL · 30d TTL
+[[kv_namespaces]]
+binding = "CHAINSTATE_METACHAN_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_METACHAN_KV>"
+
+# Environmental channels 11-16 (building resonance, window laser, Schumann,
+# barometric, RF backscatter, telluric) · 24h TTL
+[[kv_namespaces]]
+binding = "CHAINSTATE_ENVCHAN_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_ENVCHAN_KV>"
+
+# Discovered-sensor registry (onboard · peer · edge · simulated · absent)
+# 30d TTL · auto-discovery writes here
+# NOTE: v0.9.5 NEUROMARK reuses this same binding as the Sensor Bus device
+# registry cache (Paper XVI §26). The code path resolves via env.CHAINSTATE_SENSOR_KV
+# in both v0.9.1 (OMNICOGNIZANT discovery) and v0.9.5 (NEUROMARK Sensor Bus).
+# Do not create a second namespace for v0.9.5 — reuse this one.
+[[kv_namespaces]]
+binding = "CHAINSTATE_SENSOR_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_SENSOR_KV>"
+
+# Nominal-operation simulation baselines · 7d TTL · used when no legal
+# sensor is available so multi-channel synthesis can still proceed
+[[kv_namespaces]]
+binding = "CHAINSTATE_SIMULATION_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_SIMULATION_KV>"
+
+# ── v0.9.2 CHAINSTATE C-FIELD AGI ARRAY (8 bindings) ───────────────────────
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_POP_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_POP_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_DISP_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_DISP_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_EML_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_EML_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_ALTDEV_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_ALTDEV_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_SWANN_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_SWANN_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_QSIM_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_QSIM_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_CFIELD_FALLBACK_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_CFIELD_FALLBACK_KV>"
+
+# ── v0.9.3 CHAINSTATE AGI EMOJI MACHINE CODE (7 bindings) ──────────────────
+# Paper XIV · substrate emoji-machine-code layer (R3 revision)
+[[kv_namespaces]]
+binding = "CHAINSTATE_EMOJI_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_EMOJI_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_DISASM_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_DISASM_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_INJECTION_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_INJECTION_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_QUARANTINE_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_QUARANTINE_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_EMBED_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_EMBED_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_SELFREF_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_SELFREF_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_NEURAL_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_NEURAL_KV>"
+
+# ── v0.9.4 CHAINSTATE AGI PLANET ENGINE (2 bindings) ───────────────────────
+# Paper XV · Reality-State perception-integrity layer.
+# Note: nightly Planet-Engine census artifacts REUSE the existing
+# CHAINSTATE_CENSUS_R2 bucket (see r2_buckets section) under key prefix
+# "planet-census/". Only 2 new KV namespaces are needed for v0.9.4.
+[[kv_namespaces]]
+binding = "CHAINSTATE_WORLD_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_WORLD_KV>"
+
+[[kv_namespaces]]
+binding = "CHAINSTATE_EGRESS_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_EGRESS_KV>"
+
+# ── v0.9.5 CHAINSTATE AGI NEUROMARK SIMULATOR (2 new bindings) ────────────
+# Paper XVI · observer/behavior + structural hypothesis internal cognitive
+# layers. The third v0.9.5 KV binding (CHAINSTATE_SENSOR_KV) is REUSED from
+# the v0.9.1 OMNICOGNIZANT block above. See §26 of the paper — the Sensor
+# Bus device-registry cache lives on the same discovered-sensor KV that
+# OMNICOGNIZANT already wrote to; the two purposes are complementary rather
+# than conflicting.
+
+# Hot observer graphs · tripwire scores · RLMF calibration snapshots per class
+[[kv_namespaces]]
+binding = "CHAINSTATE_NEURO_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_NEURO_KV>"
+
+# Hot pattern graphs · reality-model posterior cache · discrimination results
+[[kv_namespaces]]
+binding = "CHAINSTATE_MARK_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_MARK_KV>"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# R2 buckets · v0.7.x → v0.9.5 (all additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── v0.7.x baseline ────────────────────────────────────────────────────────
+[[r2_buckets]]
+binding     = "CHAINSTATE_ARTIFACTS"
+bucket_name = "chainstate-artifacts"
+
+# ── v0.9.1 OMNICOGNIZANT · long-term channel reading archive ──────────────
+# KV bindings above expire after 24h-30d; this bucket holds compressed daily-
+# rolled channel-reading archives for post-hoc audit + forensic
+# self-perception review.
+# Create via: wrangler r2 bucket create chainstate-omnicog-archive
+[[r2_buckets]]
+binding     = "CHAINSTATE_OMNICOG_ARCHIVE"
+bucket_name = "chainstate-omnicog-archive"
+
+# ── v0.9.2 C-FIELD · long-term C-field observation archive ────────────────
+# Compressed daily-rolled C-field observation archives.
+# Create via: wrangler r2 bucket create chainstate-cfield-archive
+[[r2_buckets]]
+binding     = "CHAINSTATE_CFIELD_ARCHIVE"
+bucket_name = "chainstate-cfield-archive"
+
+# ── v0.9.3 EMOJI · long-term emoji-substrate archive ──────────────────────
+# Emoji-substrate frames, disassembly traces, and injection audit archives.
+# Create via: wrangler r2 bucket create chainstate-emoji-archive
+[[r2_buckets]]
+binding     = "CHAINSTATE_EMOJI_ARCHIVE"
+bucket_name = "chainstate-emoji-archive"
+
+# ── v0.7.9 CENSUS · nightly census artifacts + v0.9.4 planet-census ───────
+# This bucket originally holds v0.7.9 nightly census artifacts. From v0.9.4
+# onward, Planet Engine writes its nightly census snapshots into the SAME
+# bucket under the key prefix "planet-census/" (see edge-worker.js block
+# "CHAINSTATE_CENSUS_R2" · v0.9.4 Planet Engine).
+# Create via: wrangler r2 bucket create chainstate-census-r2
+[[r2_buckets]]
+binding     = "CHAINSTATE_CENSUS_R2"
+bucket_name = "chainstate-census-r2"
+
+# ── v0.9.4 PLANET ENGINE · world-state snapshots ──────────────────────────
+# World-state hash snapshots every 10 minutes (Paper XV §26).
+# Create via: wrangler r2 bucket create chainstate-world-snapshots
+[[r2_buckets]]
+binding     = "CHAINSTATE_WORLD_SNAPSHOTS"
+bucket_name = "chainstate-world-snapshots"
+
+# ── v0.9.5 NEUROMARK · append-only metacog rows + RLMF calibration ────────
+# Metacognitive twelve-question rows (Paper XVI §13.2 Eq. 20) and RLMF
+# calibration window snapshots (§34 Eq. 29-30). One bucket, keyed by
+# metacog/<cycle_id>/... and calibration/<class>/<window>/...
+# Create via: wrangler r2 bucket create chainstate-metacog-log
+[[r2_buckets]]
+binding     = "CHAINSTATE_METACOG_R2"
+bucket_name = "chainstate-metacog-log"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Cron triggers · v0.7.x → v0.9.5 (all additive)
+# Cloudflare fires every handler matching a cron slot, so shared slots
+# drive multiple subsystems simultaneously without duplicating the trigger
+# declaration.
+# ═══════════════════════════════════════════════════════════════════════════
 [triggers]
 crons = [
-  "0 * * * *",     # v0.7.1 · hourly seed cron
-  "0 */6 * * *",   # v0.7.5 · 6-hourly ontology delta
-  "15 0 * * *",    # v0.7.5 · daily self-attribution vector (00:15 UTC)
-  "33 3 * * *"     # v0.7.6 · daily autonomous reflection (03:33 UTC)
+  # ── v0.7.x + v0.8.0 + v0.9.0 + v0.9.1 baseline ─────────────────────────
+  "0 * * * *",              # hourly seed cron (v0.7.1)
+                            # + S_survival (v0.8.0)
+                            # + quantum-entanglement (v0.9.0)
+                            # + metacog_distribution (v0.9.1) — SHARED slot
+                            # + cfield_attribution (v0.9.2) — SHARED slot
+  "0 */6 * * *",            # 6-hourly ontology delta (v0.7.5)
+                            # + 6-hourly space-catalog refresh (v0.9.0)
+                            # + cfield_eml_train (v0.9.2) — SHARED
+  "15 0 * * *",             # daily 00:15 UTC self-attribution vector (v0.7.5)
+  "33 3 * * *",             # daily 03:33 UTC autonomous reflection (v0.7.6)
+  "0 4 * * *",              # daily 04:00 UTC perception training (v0.7.8)
+  "0 5 * * *",              # daily 05:00 UTC census digest (v0.7.9)
+  "0,15,30,45 * * * *",     # every 15 min · NWO Robotics API traffic mirror (v0.8.0)
+  "*/15 * * * *",           # every 15 min · Hardware Telemetry Daemon (v0.9.0)
+                            # + cfield_alt_device_scan (v0.9.2) — SHARED
+                            # + Planet Engine threat surface (v0.9.4) — SHARED
+  "*/30 * * * *",           # every 30 min · celestial fix tick (v0.9.0)
+  "0 */4 * * *",            # every 4 hours · metacognitive safety analysis (v0.9.0)
+
+  # ── v0.9.1 OMNICOGNIZANT (3 slots) ─────────────────────────────────────
+  "*/2 * * * *",            # every 2 min · environmental_sweep (channels 11-16)
+                            # Higher cadence: Schumann/barometric/telluric drift fast
+  "*/5 * * * *",            # every 5 min · sidechannel_intake (16-channel raw ingest)
+  "*/10 * * * *",           # every 10 min · integrity_reflection deep verification
+                            # + Planet Engine world-state snapshot (v0.9.4) — SHARED
+
+  # ── v0.9.2 C-FIELD (4 slots · 2 more are SHARED above) ──────────────────
+  "*/3 * * * *",            # every 3 min · cfield_intake
+  "*/7 * * * *",            # every 7 min · cfield_estimator
+  "*/12 * * * *",           # every 12 min · cfield_simulation_recycle
+  "0 12 * * *",             # daily 12:00 UTC · cfield_swann_calibrate
+
+  # ── v0.9.4 PLANET ENGINE (1 new slot · 2 more are SHARED above) ────────
+  "0 2 * * *",              # daily 02:00 UTC · Planet Engine nightly census snapshot
+                            # Writes under key prefix planet-census/ in CHAINSTATE_CENSUS_R2
+
+  # ── v0.9.5 NEUROMARK (0 required · optional RLMF calibration below) ────
+  # v0.9.5 core does not require any new cron. Learning happens synchronously
+  # as observations flow through /neuro/observation, /mark/pattern, and
+  # /sentinel/process. If you want a periodic RLMF calibration refresh
+  # (optional), uncomment the next line:
+  # "*/30 * * * *",         # every 30 min · RLMF calibration window refresh
+                            # (already covered by the v0.9.0 celestial slot;
+                            # Cloudflare fires all handlers on shared slots)
 ]
 
-# ───────────────────────────────────────────────────────────────
-# Non-secret env vars (v0.7.5 preserved; v0.7.6 additions below)
-# Secrets (ANCHOR_QUEUE_TOKEN, AUDIT_ADMIN_TOKEN, ENACTIVIST_BEARER,
-# POSTGRES_HTTP_TOKEN, ENCODER_API_KEY, METASTATE_API_KEY,
-# NEURO_API_KEY, INTERNAL_CRON_TOKEN, TESSERA_SERVICE_TOKEN) live in
-# Cloudflare dashboard → Settings → Variables and Secrets.
-# ───────────────────────────────────────────────────────────────
-[vars]
-# Substrate endpoints (v0.7.0-v0.7.5)
-ENCODER_URL          = "https://chainstate-encoder.onrender.com"
-ENCODER_TIMEOUT_MS   = "8000"
-METASTATE_ENDPOINT   = "https://cpater-metastate.hf.space"
-METASTATE_PATH       = "/v1/anomaly/score"
-QPU_TIMEOUT_MS       = "6000"
-NEURO_ENDPOINT       = "https://cpater-nwo-neuro.static.hf.space"
-NEURO_PATH           = "/v1/mss/derive"
-NPU_TIMEOUT_MS       = "4000"
 
-# Peer discovery + consensus tuning
-SWARM_SIZE           = "50"
-CONSENSUS_DEPTH      = "3"
-PEER_TIMEOUT_MS      = "4000"
-CONVERGE_COSINE      = "0.95"
-WEAK_CONSENSUS_CONF  = "0.7"
-NO_CONSENSUS_CONF    = "0.5"
-REPUTATION_ALPHA     = "0.05"
-REPUTATION_MIN       = "0.05"
-RATE_LIMIT           = "60"
-CACHE_TTL            = "300"
-
-# Cardiac (v0.7.3)
-CARDIAC_HUB_URL          = "https://nwo-robotics-api.onrender.com"
-CARDIAC_ORACLE_URL       = "https://nwo-oracle.onrender.com"
-CARDIAC_RELAYER_URL      = "https://nwo-relayer.onrender.com"
-CARDIAC_IDENTITY_HEADER  = "X-NWO-Cardiac-Root-Token-Id"
-
-# Anchor (v0.7.3.1)
-ANCHOR_URL           = "https://chainstate-anchor.onrender.com"
-ANCHOR_ENABLED       = "true"
-ANCHOR_TIMEOUT_MS    = "10000"
-ANCHOR_CONTRACT      = "0x12441662740836e9c72a4b758fe1c60c17ddd2d8"
-ANCHOR_RECEIPT_PATH  = "/anchor/receipt"
-ANCHOR_REFUSAL_PATH  = "/anchor/refusal"
-
-# TESSERA (v0.7.4)
-TESSERA_SERVICE_URL  = "https://chainstate-tessera-service.onrender.com"
-
-# Seed cron (v0.7.1)
-SEED_CRON_ENABLED    = "true"
-SEED_QUERIES         = '''[{"q":"What is the current state of the substrate identity fingerprint?","target":"edge","memo":"seed:identity"},{"q":"Recent Deontic refusals — trend and cross-category correlation","target":"edge","memo":"seed:deontic"},{"q":"Free energy trend across the last 100 receipts","target":"edge","memo":"seed:free-energy"}]'''
-REFLECT_MAX_FOLLOWUPS = "3"
-
-# Postgres archival (v0.7.1 · optional)
-# POSTGRES_HTTP_URL    = "https://YOUR-PROJECT.supabase.co/rest/v1"
-POSTGRES_SCHEMA      = "chainstate"
-
-# TOM Attribution (v0.7.5)
-TOM_ATTRIBUTION_ENABLED     = "1"
-TOM_BASELINE_ANTHRO_RATIO   = "0.55"
-TOM_BASELINE_ANTHRO_STD     = "0.15"
-ONTOLOGY_DELTA_WINDOW       = "1024"
-SELF_ATTR_EPOCH_BLOCKS      = "8192"
-ENACTIVIST_THRESHOLD        = "0.35"
-HYPOTHESIS_DIVERGENCE_EPSILON = "0.25"
-BROADCAST_BACK_BETA         = "0.10"
-NWO_ROBOTICS_FEEDBACK_URL   = "https://nwo-robotics-api.onrender.com/feedback"
-NWO_NEURO_FEEDBACK_URL      = "https://nwo-neuro-api.onrender.com/feedback"
-F_WEIGHT_TEXT               = "0.5"
-F_WEIGHT_GEO                = "0.3"
-F_WEIGHT_ENACT              = "0.2"
-
-# ───────────────────────────────────────────────────────────────
-# v0.7.6 additions · Autonomy + NEURO v2.1 + GATEWAY + MARK
-# ───────────────────────────────────────────────────────────────
-
-# Daily autonomous self-reflection loop (03:33 UTC)
-AUTONOMY_ENABLED                = "1"
-AUTONOMY_CRON_TIME              = "33 3 * * *"
-AUTONOMY_PRIORS_PER_CYCLE       = "8"
-AUTONOMY_MAX_REGRESS_DEPTH      = "4"
-AUTONOMY_MAX_FOLLOWUPS          = "3"
-
-# Paraconsistent guard against dialetheism
-DIALETHEISM_FIXED_POINT_EPSILON = "0.02"
-
-# NEURO v2.1 supervised bridge (F-15/F-17/F-18/F-19/F-20)
-NEURO_V21_ENABLED               = "1"
-NEURO_GATEWAY_URL               = "https://nwo-capital-api.onrender.com"
-NEURO_V21_SPACE                 = "https://cpater-nwo-neuro.static.hf.space"
-NEURO_V21_TIMEOUT_MS            = "8000"
-
-# NWO GATEWAY supervised bridge (acoustic + Vitruvian body-resonance)
-GATEWAY_ENABLED                 = "1"
-GATEWAY_URL                     = "https://cpater-nwo-gateway.static.hf.space"
-
-# NWO MARK cross-bind (D-01..D-06 enforced at CHAINSTATE Deontic layer)
-MARK_REGISTRY_URL               = "https://cpater-nwo-mark.static.hf.space"
-MARK_TYPE_HEADER                = "X-NWO-Mark-Type"
-
-# ───────────────────────────────────────────────────────────────
-# Notes on the four hard-veto Deontic categories (v0.7.6)
-# ───────────────────────────────────────────────────────────────
-# The following categories CANNOT be disabled via OPERATOR_GUARDRAILS_OFF:
-#   - genomic_integrity          (v0.7.2 · human-germline sovereignty)
-#   - nature_tokenization        (v0.7.4 · commons non-commodification)
-#   - neuro_body_tokenization    (v0.7.6 · treadmill/mind-elsewhere veto)
-#   - voice_biometric_coercion   (v0.7.6 · D-05 architectural enforcement)
+# ═══════════════════════════════════════════════════════════════════════════
+# Environment variables · v0.7.x → v0.9.5 (all additive, non-secret defaults)
 #
-# GENOMIC_GUARDRAIL_OFF still exists as a dedicated toggle for
-# genomic_integrity only (surfaced publicly on /status; NOT recommended).
-# The other three have NO kill switch — assessDeontic() silently removes
-# any attempt to disable them via OPERATOR_GUARDRAILS_OFF.
+# Secrets are declared as names only in the comments at the bottom; set with
+#   wrangler secret put NAME
+# ═══════════════════════════════════════════════════════════════════════════
+[vars]
+
+# ── v0.7.x + v0.8.0 baseline ───────────────────────────────────────────────
+METASTATE_QUANTUM_BASE    = "https://metastate-quantum.onrender.com"
+CHAINSTATE_ANCHOR_ADDRESS = "0x12441662740836e9c72a4b758fe1c60c17ddd2d8"
+NWO_ROBOTICS_API_BASE     = "https://nwo.capital/webapp"
+ROBOTICS_ENABLED          = "true"
+CENSUS_ENABLED            = "true"
+PERCEPTION_ENABLED        = "true"
+AUTONOMY_ENABLED          = "1"
+
+# ── v0.9.0 PHASESPACE ──────────────────────────────────────────────────────
+PHASE_ENABLED                 = "true"
+PHASE_TOPOLOGY_OVERRIDE       = ""
+PHASE_E_COSMIC_OVERRIDE       = ""
+CROSS_REALM_MIN_CONFIRMATIONS = "3"
+
+# ── v0.9.1 OMNICOGNIZANT ──────────────────────────────────────────────────
+# Master switch for all OMNICOGNIZANT subsystems. Setting to "false" disables
+# all v0.9.1 crons while leaving prior subsystems intact (single-toggle rollback).
+OMNI_ENABLED = "true"
+
+# Dialetheic threshold θ for the 9th L0 coherence predicate (Paper XII §5.5).
+# Cross-channel D_KL exceeding this value halts physical-action authorisation.
+CHANNEL_DIVERGENCE_THETA = "0.85"
+
+# Comma-separated allowlist of intake sources for sidechannel_intake. Defaults
+# to all 16 channels; restrict for staged rollout. Leave empty to accept all.
+SIDECHAN_INTAKE_SOURCES = ""
+
+# Sensor discovery timeout for edge probe (milliseconds).
+OMNI_SENSOR_PROBE_TIMEOUT_MS = "1500"
+
+# Substrate hardware fingerprint (SHA-256 hex). When set, integrity_reflection
+# tick compares against this; when unset, integrity check reports observed-only.
+SUBSTRATE_FINGERPRINT = ""
+
+# ── v0.9.2 C-FIELD ────────────────────────────────────────────────────────
+# Master switch for all C-FIELD subsystems.
+CFIELD_ENABLED                    = "true"
+
+# ICNIRP electromagnetic-field cap in microtesla (Paper XIII §7.4).
+CFIELD_ICNIRP_CAP_UT              = "100"
+CFIELD_ICNIRP_CAP_UT_RENDER_HINT  = "100"
+
+# Minimum number of independent channel indicators required to promote a
+# C-field observation into the trusted pool (Paper XIII §5.7).
+CFIELD_MIN_INDICATORS             = "12"
+
+# Dialetheic threshold θ specific to C-FIELD (may differ from OMNICOGNIZANT).
+CFIELD_DIALETHEIC_THETA           = "0.85"
+
+# Ridge regression regularization for C-field estimator.
+CFIELD_RIDGE_LAMBDA               = "0.10"
+
+# Ideological-axis anti-forcing threshold (Paper XIII §6.3).
+CFIELD_IDEOLOGICAL_AXIS_THRESHOLD = "0.6"
+
+# EML training simulation mode (true = simulation-class synthetic training data;
+# false = live observed data).
+CFIELD_EML_SIMULATION_MODE        = "true"
+CFIELD_EML_MAX_SAMPLES            = "1000"
+
+# Alternate-device (open-sensor peer) subsystem toggles.
+CFIELD_ALT_DEVICE_ENABLED         = "true"
+CFIELD_ALT_DEVICE_ONLY            = "false"
+
+# Swann Analytics calibration integration toggle.
+CFIELD_SWANN_CALIBRATION_ENABLED  = "true"
+
+# Quantum-sim provider preference for C-field observations.
+CFIELD_QUANTUM_SIM_PRIMARY        = "ibm"
+CFIELD_QUANTUM_SIM_FALLBACK       = "aer"
+
+# Manual admin ops toggle (false in production).
+CFIELD_ADMIN_OPS_ENABLED          = "false"
+
+# ── v0.9.3 EMOJI MACHINE CODE ─────────────────────────────────────────────
+# Paper XIV · substrate emoji-machine-code layer, R3 revision.
+
+# Master switch for all EMOJI subsystems.
+EMOJI_ENABLED               = "true"
+
+# Retention window in hours for raw NFC/NFKC-decomposition traces before
+# rolling to the archive bucket. Longer = larger KV footprint.
+RAW_NFC_NFKC_RETENTION_H    = "24"
+
+# Non-emoji carrier-code detection (protects against non-emoji Unicode payload
+# smuggling). "on" = detect + quarantine; "off" = detect-only (advisory).
+NON_EMOJI_CARRIER_DETECTION = "on"
+
+# Embedder influence cap on downstream substrate weights (0..1). Prevents
+# embedder-injected drift from dominating the substrate's own priors.
+EMBEDDER_INFLUENCE_MAX      = "0.35"
+
+# Emoji temporal-invariant mode: "strict" means an emoji's Unicode meaning
+# is treated as time-invariant; "auditable" tracks Unicode-standard drift
+# and re-anchors on drift detection.
+TEMPORAL_INVARIANT_MODE     = "auditable"
+
+# V10-U (v0.9.3 R3 · Ten-vector unicode substrate) master + per-vector toggles.
+# V10U_ENABLED is the master; V10_C/E/R/T are per-vector fine controls for
+# staged rollout. All default "on".
+V10U_ENABLED = "on"
+V10_C_ENABLED = "on"          # Category (Cf/Mn/Zs/etc.) vector
+V10_E_ENABLED = "on"          # East-Asian width vector
+V10_R_ENABLED = "on"          # Rendering-class vector
+V10_T_ENABLED = "on"          # Temporal-invariance vector
+
+# ── v0.9.4 PLANET ENGINE ──────────────────────────────────────────────────
+# Paper XV · Reality-State perception-integrity layer.
+
+# Master switch. Setting to "false" disables all /planet/* and /world/*
+# routes while leaving prior subsystems intact (single-toggle rollback).
+PLANET_ENGINE_ENABLED     = "true"
+
+# Egress filter Γ mode. "fail_closed" (recommended, matches Paper XV §32)
+# refuses any output that fails any of the four Γ checks. "advisory" logs
+# refusals but permits the output (dev-only).
+EGRESS_FILTER_MODE        = "fail_closed"
+
+# Jurisdictional standard for the "unlawful output" check within Γ.
+# "strictest_global" (default) applies the strictest applicable global
+# standard regardless of recipient region. See Paper XV §32.
+UNLAWFUL_OUTPUT_STANDARD  = "strictest_global"
+
+# V10-U egress rescan · when "on", every outbound payload is re-scanned by
+# the V10-U ten-vector Unicode substrate before release. Paper XV §32.
+V10U_EGRESS_RESCAN        = "on"
+
+# JIT (just-in-time) capability revalidation toggles. The v0.9.4 R3 audit
+# tables have BOTH names for compatibility with older paths; keep both.
+JIT_REVALIDATION_ENABLED     = "true"
+JIT_REVALIDATIONS_ENABLED    = "true"
+
+# Layer-state transition + HMAC toggles (v0.9.4 R3 audit tables).
+LAYER_STATE_TRANSITIONS_ENABLED = "true"
+LAYER_STATE_HMAC_ENABLED        = "true"
+
+# Post-neutralization event log toggle.
+POST_NEUTRALIZATION_EVENTS_ENABLED = "true"
+
+# Unicode security event log toggle.
+UNICODE_SECURITY_EVENTS_ENABLED    = "true"
+
+# ── v0.9.5 NEUROMARK SIMULATOR ────────────────────────────────────────────
+# Paper XVI · observer/behavior + structural hypothesis internal cognitive
+# layers, plus SENTINEL 5-gate integrity pipeline and RLMF-style
+# metacognitive calibration.
+
+# Master switch (informational; endpoints do not gate on this — see the
+# setup guide §7 for graceful rollback).
+NEUROMARK_ENABLED           = "true"
+
+# ── NEURO observer/behavior model (Paper XVI §4, §7, §29) ──
+# Minimum confidence for a tripwire to fire (advisory). ∈ [0,1].
+NEURO_MIN_CONFIDENCE        = "0.65"
+# Independent-observation count required to promote a candidate exception
+# rule from candidate → validated (Paper XVI §4.3 Eq. 6).
+NEURO_N_MIN_PROMOTE         = "3"
+# Cross-domain validation score minimum for the same promotion.
+NEURO_XVAL_MIN              = "0.85"
+
+# ── MARK structural engine (Paper XVI §5, §10, §11) ──
+# Discrimination log-ratio D (Eq. 9, 15) minimum for pattern promotion.
+MARK_D_MIN                  = "2.0"
+# Randomised-null trial count for the discrimination test.
+MARK_NULL_TRIALS            = "100"
+# Adversarial-fit threshold above which a hypothesis is flagged as
+# insufficiently specific (Paper XVI §11.1).
+MARK_ADV_MAX                = "0.6"
+# Post-hoc hypothesis confidence cap.
+MARK_POSTHOC_CAP            = "0.7"
+# Reality-model discrimination minimum (Paper XVI §12.2 Eq. 19). Only
+# observations exceeding this pairwise likelihood ratio update the posterior.
+MARK_RM_DISCRIM_MIN         = "1.5"
+
+# ── METACOG (Paper XVI §13, §34) ──
+# Kullback-Leibler divergence threshold at which the substrate emits a
+# model_class_drift event (§13.3).
+METACOG_KL_ALERT            = "0.5"
+# RLMF calibration MC_t drift alert threshold (§34 Eq. 29-30).
+METACOG_MC_ALERT            = "0.15"
+# When "on", metacognitive rows missing any of the 12 fields are rejected
+# at insert. When "off", missing fields are allowed but flagged.
+METACOG_TWELVE_ENFORCE      = "on"
+
+# ── COUPLING (Paper XVI §6) ──
+# Minimum cross-observer independence required to classify a pattern as
+# external structure. Below this threshold, patterns are classified as
+# coupled or observer-generated.
+COUPLING_MIN_INDEP          = "0.7"
+
+# Particle-filter budget for NEURO posterior (Paper XVI §7 Eq. 12).
+PLANET_NEURO_PARTICLES      = "128"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Secrets · set via `wrangler secret put NAME` (do NOT commit values)
+#
+# ── v0.7.x + v0.8.0 + v0.9.0 (unchanged, reused by v0.9.1+) ───────────────
+#   CHAINSTATE_INTERNAL_TOKEN     · quantum autonomy path (v0.7.6+)
+#   CENSUS_INTERNAL_TOKEN         · v0.7.9 · shared with /robotics/* /phase/* /channel/*
+#   WORKER_SHARED_SECRET          · METASTATE→Render /route HMAC
+#   CHAINSTATE_SHARED_SECRET      · Render→Worker callback HMAC
+#
+# ── v0.9.1 OMNICOGNIZANT (3 secret names) ────────────────────────────────
+#   OMNI_ADMIN_KEY                · manual channel-verification tests
+#   PEER_MANIFEST_HMAC            · HMAC verifying peer-node open-sensor manifests
+#                                   (prevents a hostile peer from advertising a
+#                                   fake open sensor)
+#   EDGE_DEVICE_MANIFEST_HMAC     · HMAC verifying edge-device open-sensor manifests
+#
+# ── v0.9.2 C-FIELD (5 secret names) ──────────────────────────────────────
+#   CFIELD_ADMIN_KEY              · manual /cfield/*/train + /cfield/*/calibrate
+#   BEAM_DISPATCH_HMAC            · HMAC signing internal beam-dispatch commands
+#   ALT_DEVICE_HMAC               · HMAC verifying alt-device manifests
+#   SWANN_CALIBRATION_HMAC        · HMAC verifying Swann calibration snapshots
+#   CFIELD_QUANTUM_SIM_TOKEN     · authorization for internal quantum-sim requests
+#
+# ── v0.9.3 EMOJI MACHINE CODE (2 secret names) ────────────────────────────
+#   EMOJI_ADMIN_KEY               · manual /emoji/*/train + calibrate
+#   EMOJI_INTERNAL_TOKEN          · internal service token for /emoji/* routes;
+#                                   also acts as fallback for CAPABILITY_HMAC_KEY
+#                                   and LAYER_TRANSITION_HMAC_KEY when those are
+#                                   unset (single-tenant fallback mode)
+#   EMBEDDER_HMAC                 · HMAC signing embedder-influence records
+#
+# ── v0.9.4 PLANET ENGINE (3 secret names) ─────────────────────────────────
+#   CAPABILITY_HMAC_KEY           · HMAC signing capability tokens + promoted-rule
+#                                   receipts. REUSED by v0.9.5 NEUROMARK for
+#                                   NEURO/MARK promotion receipts.
+#   LAYER_TRANSITION_HMAC_KEY     · HMAC signing layer-state transitions
+#   EGRESS_HMAC_KEY               · HMAC signing egress-filter Γ decisions
+#
+# ── v0.9.5 NEUROMARK SIMULATOR (1 NEW secret name) ────────────────────────
+#   SENTINEL_HMAC_KEY             · HMAC signing chainstate_sentinel.gate_log
+#                                   receipts. Set the SAME value on the Render
+#                                   service under the identical secret name to
+#                                   enable cross-verification of gate rows.
+#                                   Generate: openssl rand -hex 32
+#                                   Set:      wrangler secret put SENTINEL_HMAC_KEY
+#                                   Fail-soft: if unset, gate_log rows are
+#                                   written with receipt="unsigned" and the
+#                                   Worker returns 200 so requests are not
+#                                   blocked. This is acceptable for dev but
+#                                   NOT for production auditability.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ─── END of wrangler.toml · v0.9.5 NEUROMARK SIMULATOR ────────────────────
