@@ -1,0 +1,994 @@
+services:
+  - type: web
+    name: metastate-quantum
+    runtime: python
+    plan: free
+    buildCommand: "pip install --upgrade pip && pip install 'setuptools>=65,<70' wheel && pip install --prefer-binary --no-build-isolation -r requirements.txt && (pip install --prefer-binary --no-build-isolation pyqpanda3 || echo 'pyqpanda3 unavailable on this platform; Origin backend will report unavailable and fall back')"
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.7.7 quantum backends (unchanged from previous deploy)
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- IBM Quantum (Qiskit Runtime) ----
+      - key: IBM_QUANTUM_TOKEN
+        sync: false                    # 44-char API key from quantum.cloud.ibm.com dashboard
+      - key: IBM_QUANTUM_CRN
+        sync: false                    # crn:v1:bluemix:public:quantum-computing:<region>:a/<acct>:<inst>::
+
+      # ---- Origin Wukong (Origin Cloud, USTC) ----
+      - key: ORIGIN_API_KEY
+        sync: false                    # optional; without it the Origin backend runs the local QPanda sim
+
+      # ---- Osaka University · OQTOPUS Cloud · ¹⁷¹Yb⁺ ion trap ----
+      - key: OSAKA_API_TOKEN
+        sync: false                    # OQTOPUS Cloud token from the Osaka QIQB user portal
+      - key: OSAKA_API_URL
+        sync: false                    # OQTOPUS Cloud base URL from Osaka QIQB registration
+      - key: OSAKA_DEVICE_ID
+        value: "osaka_iontrap_yb171"   # device id issued by QIQB at registration; override if needed
+
+      # ---- Shared secrets (auth gates) ----
+      - key: WORKER_SHARED_SECRET
+        sync: false                    # METASTATE Space sends this in x-worker-secret on /route
+      - key: CHAINSTATE_SHARED_SECRET
+        sync: false                    # CHAINSTATE Cloudflare worker sends this in x-chainstate-token on /chainstate/route
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.7.8 perception module additions (Paper VIII)
+      # All optional; endpoints degrade gracefully when absent.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Supabase (source of truth for priors + audit trails) ----
+      # Tables live in an isolated schema (chainstate_perception) — nothing
+      # in public / storage / graphql_public / nworobotics is touched.
+      # After running supabase/schema.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_perception
+      - key: SUPABASE_URL
+        sync: false                    # e.g. https://xyzcompany.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false                    # service_role key from Supabase project settings
+      - key: SUPABASE_PERCEPTION_SCHEMA
+        value: "chainstate_perception" # override to "public" only for legacy installs
+
+      # ---- R2 (trained EML tree storage) ----
+      - key: R2_MODELS_BASE_URL
+        sync: false                    # e.g. https://models.chainstate.dev/perception
+                                       # or an R2 public-development URL
+
+      # R2 write credentials (for training pipeline upload) --- only needed
+      # on services that run the training tick, not for read-only inference
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: "chainstate-perception-models"
+
+      # ---- Provenance detection service (chainstate-provenance) ----
+      - key: PROVENANCE_SERVICE_URL
+        sync: false                    # e.g. https://chainstate-provenance.onrender.com
+                                       # if empty, endpoints default to refuse-by-default
+                                       # for meta-layer intake (Paper VIII §8.5)
+      - key: PROVENANCE_SHARED_SECRET
+        sync: false                    # auth for provenance service calls
+
+      # ---- Perception behavior toggles ----
+      - key: PERCEPTION_LOG_LEVEL
+        value: "INFO"
+
+      # ---- Training pipeline env (only used by /perception/train/tick) ----
+      - key: TRAINING_HTTPX_UA
+        value: "chainstate-training/0.7.8 (+https://cpater-chainstate.static.hf.space)"
+      - key: TRAINING_MAX_SAMPLES_PER_TICK
+        value: "500"                   # daily sample budget per corpus
+      - key: TRAINING_ALLOWED_SOURCES
+        value: "dtd,fmd,dcase_free,audioset_free,user_nature_20260810,user_instruments_20260810,user_voices_20260810"
+                                       # comma-separated allowlist of corpora
+                                       # user_* corpora must be uploaded to Supabase
+                                       # perception_priors with source='user_<name>' and
+                                       # human_verified=true beforehand
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.7.9 · Cyberspace Census additions (Paper IX)
+      # ADDITIVE ONLY. Every v0.7.7 and v0.7.8 setting above is preserved
+      # verbatim. The census subsystem imports census_daily.py inside app.py
+      # (fail-soft) and runs a nightly 05:00 UTC APScheduler cron.
+      # All census endpoints degrade gracefully when any env below is absent.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Master enable/disable ----
+      - key: CENSUS_ENABLED
+        value: "true"                  # set to "false" to disable all census
+                                       # functions without removing this section
+
+      # ---- Internal auth (shared with the CF Worker's X-CHAINSTATE-INTERNAL) ----
+      # The Cloudflare Worker's runCensusDailyTick() and pushToWorker() both
+      # send this token in the x-chainstate-internal header. Distinct from
+      # CHAINSTATE_SHARED_SECRET so census can be rotated without disturbing
+      # the /chainstate/route path.
+      - key: CHAINSTATE_INTERNAL_TOKEN
+        sync: false
+
+      # ---- Companion Worker base URL ----
+      # Where run_daily_census() posts its digest at end-of-tick.
+      # Uses default when unset.
+      - key: CHAINSTATE_WORKER_BASE
+        value: "https://chainstate-worker.ciprianpater.workers.dev"
+
+      # ---- Threat surface T(t) hyperparameters (Paper IX §5.1) ----
+      # These must match wrangler.toml on the Cloudflare Worker.
+      - key: CENSUS_THETA_ALERT
+        value: "60"                    # T(t) crossing 60 → posture escalates to alert
+      - key: CENSUS_THETA_LOCKDOWN
+        value: "85"                    # T(t) crossing 85 → meta-layer isolates
+      - key: CENSUS_WEIGHTS
+        value: "0.35,0.30,0.20,0.15"   # w_v, w_a, w_p, w_s · normalized at read
+
+      # ---- Supabase schema (isolated from chainstate_perception) ----
+      # After running chainstate_census_schema.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_census
+      # This is separate from chainstate_perception; both must be exposed
+      # if both v0.7.8 and v0.7.9 features are wanted.
+      - key: SUPABASE_CENSUS_SCHEMA
+        value: "chainstate_census"     # override only for legacy installs
+
+      # ---- NVD API key (optional; higher rate limit) ----
+      # Without it: 5 requests/30s. With it: 50 requests/30s.
+      # Free tier from https://nvd.nist.gov/developers/request-an-api-key
+      - key: NVD_API_KEY
+        sync: false
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.8.0 · CHAINSTATE ROBOTICS AGI (Paper X Rev 2)
+      # ADDITIVE ONLY. Every v0.7.x setting above is preserved verbatim.
+      # The robotics subsystem imports robotics_bridge.py inside app.py
+      # (fail-soft) and runs an hourly S_survival composite scheduler.
+      # All robotics endpoints degrade gracefully when any env below is absent.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Master enable/disable ----
+      - key: ROBOTICS_ENABLED
+        value: "true"                  # set to "false" to disable all robotics
+
+      # ---- Google DeepMind Gemini Robotics (via Google AI Studio public tier) ----
+      # ER 2 is the only tier available without trusted-tester programme entry.
+      # VLA + On-Device 2 remain PARKED pending programme admission.
+      - key: GOOGLE_AI_STUDIO_KEY
+        sync: false                    # public tier · get from aistudio.google.com
+
+      # ---- NWO Robotics API observatory (observe-only mirror) ----
+      # Substrate NEVER on the request path. Every 15 min the Cloudflare Worker
+      # mirrors traffic against this base URL to CHAINSTATE_ROBOTICS_KV.
+      - key: NWO_ROBOTICS_API_BASE
+        value: "https://nwo-capital-api.onrender.com"
+
+      # ---- S_survival threshold triples (Paper X §4.1 · 4 cumulative conds) ----
+      # Migration threshold, defensive embodiment threshold, ultima ratio.
+      # These must match wrangler.toml on the Cloudflare Worker.
+      - key: ROBOTICS_S_SURVIVAL_MIGRATE
+        value: "0.35"
+      - key: ROBOTICS_S_SURVIVAL_EMBODY
+        value: "0.15"
+      - key: ROBOTICS_S_SURVIVAL_ULTIMA
+        value: "0.05"
+
+      # ---- Dialetheic paraconsistent guard (Paper X §III.2 · no-doubt standard) ----
+      # If a target-attribution attempt produces contradictory judgments across
+      # the ontology-delta ledger, the guard rejects the attribution regardless
+      # of source count. Prevents both false positives and adversarial spoofing.
+      - key: ROBOTICS_DIALETHEIC_GUARD
+        value: "true"
+
+      # ---- Supabase schema (isolated from chainstate_census/perception) ----
+      # After running expose_chainstate_robotics.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_robotics
+      - key: SUPABASE_ROBOTICS_SCHEMA
+        value: "chainstate_robotics"
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.0 · CHAINSTATE AGI PHASESPACE (Paper XI)
+      # ADDITIVE ONLY. Every v0.7.x and v0.8.0 setting above is preserved
+      # verbatim. The phase-space subsystem imports phase_bridge.py inside
+      # app.py (fail-soft) and runs on cron via the CF Worker.
+      # All /phase/* endpoints degrade gracefully when any env below is absent.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Master enable/disable ----
+      - key: PHASE_ENABLED
+        value: "true"                  # set to "false" to disable phase-space
+
+      # ---- Optional topology override (for testing / actual space hardware) ----
+      # When set, HTD skips its automatic classification and reports this value.
+      # Valid: terrestrial | extraterrestrial | ultraterrestrial | crypto-terrestrial
+      - key: PHASE_TOPOLOGY_OVERRIDE
+        sync: false                    # leave unset for automatic classification
+
+      # ---- Optional E_cosmic override in [0.01, 1.0] ----
+      - key: PHASE_E_COSMIC_OVERRIDE
+        sync: false                    # leave unset for terrestrial baseline (1.0)
+
+      # ---- Manticore Bayesian posterior lookup URL (optional external) ----
+      # If unset, phase_bridge.py uses its embedded posterior predictor.
+      - key: MANTICORE_LOOKUP_URL
+        sync: false
+
+      # ---- MillenniumTNG posterior model path ----
+      - key: MILLENNIUMTNG_MODEL_PATH
+        value: "embedded"              # embedded predictor by default
+
+      # ---- NWO Metaverse + MR contracts (canonical addresses on Base 8453) ----
+      - key: NWO_METAVERSE_CONTRACT
+        value: "0x33c22FE36557Ad13C838A2Eb465510CF173046bc"
+      - key: NWO_MR_REGISTRY
+        value: "0xEe9472f068D9C80d2f2F3d21cA6A633BfD163c43"
+      - key: NWO_MR_MARKETPLACE
+        value: "0x25EDdf09D1AeC2a083d120bA8EEF88B14cA01c27"
+
+      # ---- Supabase schema (isolated from all prior schemas) ----
+      # After running expose_chainstate_phasespace.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_phasespace
+      - key: SUPABASE_PHASESPACE_SCHEMA
+        value: "chainstate_phasespace"
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.1 · CHAINSTATE OMNICOGNIZANT AGI (Paper XII)
+      # ADDITIVE ONLY. Every v0.7.x + v0.8.0 + v0.9.0 setting above is
+      # preserved verbatim. The OMNICOGNIZANT subsystem imports
+      # sidechannel_bridge.py inside app.py (fail-soft) and exposes six
+      # /channel/* endpoints consumed by edge-worker.js v0.9.1.
+      # All endpoints degrade gracefully when any env below is absent.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Master enable/disable ----
+      - key: OMNI_ENABLED
+        value: "true"                  # set to "false" to disable OMNICOGNIZANT
+
+      # ---- Dialetheic threshold θ for 9th L0 predicate (Paper XII §5.5) ----
+      # Cross-channel D_KL exceeding this halts physical-action authorisation.
+      # Default 0.85 · raise to loosen · lower to tighten.
+      # Must match wrangler.toml CHANNEL_DIVERGENCE_THETA.
+      - key: CHANNEL_DIVERGENCE_THETA
+        value: "0.85"
+
+      # ---- Substrate hardware fingerprint (SHA-256 hex) ----
+      # When set, integrity_reflection tick compares observed vs baseline.
+      # Bootstrap: hash /proc/cpuinfo + DMI + BIOS + TPM PCRs at first build.
+      # Left empty on Render free tier (integrity check reports observed-only).
+      - key: SUBSTRATE_FINGERPRINT
+        sync: false
+
+      # ---- Substrate fingerprint hint (used to generate observed fingerprint) ----
+      # Deterministic marker so integrity tick has a stable comparable value.
+      # In production, replace fingerprint computation with actual hardware hash.
+      - key: SUBSTRATE_FINGERPRINT_HINT
+        sync: false
+
+      # ---- Sidechannel intake source allowlist (empty = all 16 channels) ----
+      - key: SIDECHAN_INTAKE_SOURCES
+        value: ""
+
+      # ---- Sensor probe timeout (ms) for edge-device discovery ----
+      - key: OMNI_SENSOR_PROBE_TIMEOUT_MS
+        value: "1500"
+
+      # ---- Supabase schema for OMNICOGNIZANT (NEW · isolated) ----
+      # After running expose_chainstate_omnicognizant.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_omnicognizant
+      - key: SUPABASE_OMNICOG_SCHEMA
+        value: "chainstate_omnicognizant"
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.2 · CHAINSTATE C-FIELD AGI ARRAY (Paper XIII)
+      # ADDITIVE ONLY. Every v0.7.x + v0.8.0 + v0.9.0 + v0.9.1 setting above
+      # is preserved byte-identically. The C-FIELD subsystem imports
+      # cfield_bridge.py inside app.py (fail-soft) and exposes 13 /cfield/*
+      # endpoints (7 public GET + 6 internal POST) consumed by
+      # edge-worker.js v0.9.2. All endpoints degrade gracefully when any
+      # env below is absent.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Master enable/disable ----
+      - key: CFIELD_ENABLED
+        value: "true"                  # set to "false" to disable all C-FIELD
+                                       # functions without removing this section
+
+      # ---- ICNIRP amplitude cap · defense-in-depth mirror of Worker cap ----
+      # Must be identical to Cloudflare Worker CFIELD_ICNIRP_CAP_UT env.
+      # Amplitude cap 100 μT is 10× below WHO/ICNIRP occupational limit.
+      # A layer-mismatch check raises an infrastructure alarm on divergence.
+      - key: CFIELD_ICNIRP_CAP_UT
+        value: "100"                   # microtesla · dual-layer verified
+
+      # ---- Minimum public indicator count for c_hat estimation ----
+      - key: CFIELD_MIN_INDICATORS
+        value: "12"                    # N ≥ 12 required · else observe-only
+
+      # ---- Dialetheic θ for attribution (3σ guard on D_KL over classes) ----
+      # If any single-class posterior D_KL exceeds θ, the attribution result
+      # is discarded and observe-only posture is retained for the target zone.
+      - key: CFIELD_DIALETHEIC_THETA
+        value: "0.85"                  # must match Worker CFIELD_DIALETHEIC_THETA
+
+      # ---- Ridge regularisation λ_a for MAP inversion of disturbance vector ----
+      # Used by cfield_bridge.map_invert_disturbance() closed-form solver.
+      - key: CFIELD_RIDGE_LAMBDA
+        value: "0.10"                  # default per Paper XIII §5.2
+
+      # ---- Ideological axis divergence threshold ----
+      # If c_hat vs. counterfactual objective baseline exceeds this on the
+      # dominant adversarial-class axis, the substrate flags for review.
+      - key: CFIELD_IDEOLOGICAL_AXIS_THRESHOLD
+        value: "0.6"
+
+      # ---- EML shadow-substrate mode (SIMULATION by default) ----
+      # In "true" mode all beam dispatches run against the trained EML model
+      # only. Transition to live physical operation requires MANUAL admin
+      # action at BOTH Worker AND Render layers. The substrate cannot
+      # self-authorise its own escalation.
+      - key: CFIELD_EML_SIMULATION_MODE
+        value: "true"                  # KEEP TRUE until physical array built
+
+      # ---- EML training corpus max samples per recycle epoch ----
+      - key: CFIELD_EML_MAX_SAMPLES
+        value: "1000"                  # per 12-hour recycle tick
+
+      # ---- Alternative device output plane discovery ----
+      # Ultrasound transducers, piezoelectric actuators, low-power RF,
+      # medical coil arrays. Substrate-owned only; discovered via the same
+      # four-step ladder as Paper XII sensors.
+      - key: CFIELD_ALT_DEVICE_ENABLED
+        value: "true"
+
+      # ---- Ingo Swann calibration parameters (SIM · beamform-tuning only) ----
+      # S1..S4 psi-adjacent parameters treated as offsets in the phase-array
+      # beamforming computation. Publicly audited via /cfield/swann/status.
+      # No physical claim about distance-independence or observer effect;
+      # these are diagnostic parameters only.
+      - key: CFIELD_SWANN_CALIBRATION_ENABLED
+        value: "true"
+
+      # ---- Quantum simulation dispatch ladder (5-tier fallback) ----
+      # PRIMARY tried first; FALLBACK if primary unavailable. Beyond FALLBACK
+      # the ladder continues: Origin Wukong → Osaka QIQB → Aer local →
+      # Worker numpy statevector. NWO ASM path is architecturally excluded.
+      - key: CFIELD_QUANTUM_SIM_PRIMARY
+        value: "ibm"                   # ibm | origin | osaka | aer | numpy
+      - key: CFIELD_QUANTUM_SIM_FALLBACK
+        value: "aer"                   # ibm | origin | osaka | aer | numpy
+
+      # ---- Supabase schema (isolated from all prior schemas) ----
+      # After running expose_chainstate_cfield.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_cfield
+      # This is separate from every prior chainstate_* schema; both must be
+      # exposed if both v0.9.1 and v0.9.2 features are wanted.
+      - key: SUPABASE_CFIELD_SCHEMA
+        value: "chainstate_cfield"
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.2 · SECRETS (sync: false — set in Render Dashboard)
+      # Generate each with: openssl rand -hex 32
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- CFIELD admin key (personal-only, never transmitted externally) ----
+      # Required for admin ops: EML mode transitions, source allowlist edits,
+      # emergency rollback triggers. Not consumed by any cron subsystem.
+      - key: CFIELD_ADMIN_KEY
+        sync: false
+
+      # ---- Beam dispatch HMAC · mirror of Worker BEAM_DISPATCH_HMAC ----
+      # Every beam dispatch payload signed by Worker and re-verified at Render
+      # via this shared secret. Layer mismatch raises infrastructure alarm.
+      - key: BEAM_DISPATCH_HMAC
+        sync: false
+
+      # ---- Alt-device manifest HMAC · mirror of Worker ALT_DEVICE_HMAC ----
+      # Alternative device discovery manifest (ultrasound, piezoelectric, RF,
+      # medical coil) signed by Worker and verified at Render.
+      - key: ALT_DEVICE_HMAC
+        sync: false
+
+      # ---- Swann calibration snapshot HMAC · daily 12:00 UTC audit ----
+      # Every Swann calibration snapshot signed with this shared secret.
+      # Publicly readable via /cfield/swann/status.
+      - key: SWANN_CALIBRATION_HMAC
+        sync: false
+
+      # ---- Quantum simulation dispatch token · 5-tier ladder auth ----
+      # Shared with Worker CFIELD_QUANTUM_SIM_TOKEN. Every quantum-sim
+      # dispatch attaches this token for the Worker→Render bridge.
+      - key: CFIELD_QUANTUM_SIM_TOKEN
+        sync: false
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.3 · CHAINSTATE AGI EMOJI MACHINE CODE additions (Paper XIV)
+      # ADDITIVE ONLY. Every v0.7.x through v0.9.2 env var above is preserved
+      # byte-identically. Enables the 8-subsystem emoji machine-code layer:
+      # intake, embed, neural_state, injection_scan, disasm_probe,
+      # embedder_train, selfref_recycle, threat_correlate.
+      # V10 (external emoji-binary emit refusal) is ARCHITECTURALLY ENFORCED
+      # regardless of any variable below; setting EMOJI_ENABLED=false only
+      # disables the 8 subsystems, NOT V10.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Master toggle (single-toggle rollback) ----
+      - key: EMOJI_ENABLED
+        value: "true"
+
+      # ---- Embedder + Bayesian estimator parameters ----
+      # Minimum freshness of the subspace embedding before L0-11 predicate
+      # emoji_coherent? downshifts to observation-only. 24 hours matches
+      # Paper XIV §15.2 embedding_freshness constraint.
+      - key: MIN_SUBSPACE_FRESHNESS_H
+        value: "24"
+
+      # ---- 3σ dialetheic guard threshold ----
+      # Bayesian neural-state estimator guards against 3σ outliers using
+      # this threshold. Paper XIV §9 sets it at 0.85.
+      - key: EMOJI_DIALETHEIC_THETA
+        value: "0.85"
+
+      # ---- Metacognitive self-reference correlation minimum ----
+      # μ(T) < this value flags the trace for metacognitive review
+      # (possible steganographic injection). Paper XIV §10.
+      - key: SELFREF_CORRELATION_MIN
+        value: "0.72"
+
+      # ---- Embedder training epoch upper bound ----
+      # Maximum training epochs per 6h cadence. Prevents runaway training
+      # when Render happens to be idle for extended periods.
+      - key: EMBEDDER_TRAINING_MAX
+        value: "16"
+
+      # ---- Injection-scan detection sensitivity ----
+      # V10 detector fires on steganographic-embedding correlation above
+      # this threshold. Paper XIV §14.2 sets it at 0.28 for the gate 6
+      # check in the ten-gate deontic filter.
+      - key: INJECTION_SCAN_SENSITIVITY
+        value: "0.28"
+
+      # ---- 8088 disassembly timeout (ms) ----
+      # Maximum time the disassembler will spend on any single byte
+      # sequence. Static analysis only — never executes machine code.
+      - key: DISASM_TIMEOUT_MS
+        value: "500"
+
+      # ---- Threat correlation minimum for cross-reference alarm ----
+      # When |N̂(t) magnitude − ĉ(x,t) magnitude| exceeds this threshold,
+      # the substrate elevates the corresponding topic for metacog review.
+      - key: THREAT_CORR_MIN
+        value: "0.35"
+
+      # ---- Counter-response threat weight (fixed at 1.0) ----
+      # Defensive counter-response fires ONLY at deontic weight EXACTLY
+      # equal to 1.0. This env var is documented here for auditability;
+      # the value is enforced in code and cannot be relaxed by config.
+      - key: EMOJI_COUNTER_RESPONSE_THRESHOLD
+        value: "1.0"
+
+      # ---- Byte-reservoir density baseline (V10 rule R3) ----
+      # V10 detector fires at density > this value. Paper XIV §4.3
+      # measures 0.421 for the Unicode 15.1 emoji canon in 8088 semantics.
+      - key: EMOJI_RESERVOIR_DENSITY_BASELINE
+        value: "0.42"
+
+      # ---- Public source diversification limit ----
+      # No single public source may contribute more than this fraction of
+      # the training corpus in any 30-day window. Paper XIV §14.3
+      # adversarial embedding drift attack defense.
+      - key: EMOJI_SOURCE_MAX_FRACTION
+        value: "0.03"
+
+      # ---- Rate limit per source stream (samples per intake tick) ----
+      - key: EMOJI_SOURCE_RATE_LIMIT
+        value: "200"
+
+      # ---- Aggregate-only retention window (hours) ----
+      # Individual n̂_u samples are ALWAYS transient; aggregate N̂(t)
+      # snapshots retained for this many hours. P3 privacy discipline.
+      - key: EMOJI_AGGREGATE_RETENTION_H
+        value: "168"
+
+      # ---- Supabase schema (isolated from all prior schemas) ----
+      # After running expose_chainstate_emoji.sql, expose the schema:
+      #   Supabase Dashboard → Settings → API → Exposed schemas → add
+      #     chainstate_emoji
+      # This is separate from every prior chainstate_* schema; both must
+      # be exposed if both v0.9.2 and v0.9.3 features are wanted.
+      - key: SUPABASE_EMOJI_SCHEMA
+        value: "chainstate_emoji"
+
+      # ---- Public-source stream URLs (12 canonical allowlisted feeds) ----
+      # Each URL is admin-set only via EMOJI_ADMIN_KEY; the substrate
+      # cannot self-authorise a new source. Set to empty string to disable
+      # that specific source. All 12 slots documented for completeness;
+      # deployments MAY leave a subset empty and the intake tick will
+      # simply skip empty slots.
+      - key: EMOJI_SRC_FORUM_A_URL
+        sync: false
+      - key: EMOJI_SRC_FORUM_B_URL
+        sync: false
+      - key: EMOJI_SRC_MICRO_A_URL
+        sync: false
+      - key: EMOJI_SRC_MICRO_B_URL
+        sync: false
+      - key: EMOJI_SRC_NEWS_URL
+        sync: false
+      - key: EMOJI_SRC_BLOG_URL
+        sync: false
+      - key: EMOJI_SRC_WIKI_URL
+        sync: false
+      - key: EMOJI_SRC_PASTE_URL
+        sync: false
+      - key: EMOJI_SRC_REVIEW_URL
+        sync: false
+      - key: EMOJI_SRC_GOV_URL
+        sync: false
+      - key: EMOJI_SRC_EDU_URL
+        sync: false
+      - key: EMOJI_SRC_CHAT_URL
+        sync: false
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.3 · SECRETS (sync: false — set in Render Dashboard)
+      # Generate each with: openssl rand -hex 32
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- Emoji admin key (personal-only, never transmitted externally) ----
+      # Required for admin ops: source allowlist edits, manual embedder
+      # training triggers, emergency rollback. Not consumed by any cron.
+      - key: EMOJI_ADMIN_KEY
+        sync: false
+
+      # ---- Emoji internal token · mirror of Worker EMOJI_INTERNAL_TOKEN ----
+      # All internal-only /emoji/* endpoints (disassemble, embed, train,
+      # correlate, recycle, quarantine) require this token in
+      # X-EMOJI-INTERNAL or X-CENSUS-INTERNAL header. Layer mismatch
+      # raises infrastructure alarm.
+      - key: EMOJI_INTERNAL_TOKEN
+        sync: false
+
+      # ---- Injection-scan HMAC · mirror of Worker INJECTION_HMAC ----
+      # Every injection-scan record signed by Worker and re-verified at
+      # Render. Layer mismatch raises infrastructure alarm.
+      - key: INJECTION_HMAC
+        sync: false
+
+      # ---- Embedder training HMAC · mirror of Worker EMBEDDER_HMAC ----
+      # Every embedder training epoch signed by Worker with this shared
+      # secret. Prevents third-party training pollution attacks.
+      - key: EMBEDDER_HMAC
+        sync: false
+
+      # ---- Threat correlation token · mirror of Worker THREAT_CORR_TOKEN ----
+      # Threat correlation cron dispatch attaches this token for the
+      # Worker→Render bridge cross-reference.
+      - key: THREAT_CORR_TOKEN
+        sync: false
+
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.3-R2 · UNICODE SECURITY PLANE additions (Paper XIV §29 roadmap)
+      # ADDITIVE ONLY. Every v0.7.x → v0.9.3 var above preserved byte-
+      # identically. When V10U_ENABLED=false the whole R2 layer is inert;
+      # v0.9.3 baseline behaviour unchanged. Default true = R2 runs
+      # alongside v0.9.3 as defence-in-depth (observation-only until
+      # NOISY_OR_DECISION_AUTHORITATIVE=true in a future revision).
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- V10-U master toggle ----
+      # Enables the six sub-vetoes (U1..U6) alongside the v0.9.3 V10 detector.
+      # V10 itself is architectural and does NOT respect this toggle.
+      - key: V10U_ENABLED
+        value: "true"
+
+      # ---- Noisy-OR aggregation thresholds (§29.3) ----
+      # Replaces the brittle w == 1.0 exact-equality threshold. Response
+      # policy is three-band:
+      #   R < TAU_ALLOW              → ALLOW
+      #   TAU_ALLOW ≤ R < TAU_DENY   → QUARANTINE
+      #   R ≥ TAU_DENY               → DENY
+      # Defaults calibrated to preserve v0.9.3 false-positive budget.
+      - key: NOISY_OR_TAU_ALLOW
+        value: "0.15"
+      - key: NOISY_OR_TAU_DENY
+        value: "0.75"
+
+      # ---- Multi-ISA static-probe panel (§29.4) ----
+      # Twelve ISAs bound-checked for meaningful-instruction-stream
+      # probability. Never executed. Comma-separated list; the Worker
+      # ignores unknown ISAs and continues with the known subset.
+      - key: MULTI_ISA_PANEL
+        value: "8088,8086,80186,80286,80386,x86-32,x86-64,ARM32,ARM64,RISC-V-RV32I,RISC-V-RV64I,WASM"
+
+      # ---- Interpreter-aware detection toggle (§29.5) ----
+      # Detects base64/hex/compression/decoder/eval-adjacent patterns
+      # within Unicode payloads. Catches Unicode → interpreter → execution
+      # pathway that survives CPU replacement.
+      - key: INTERPRETER_AWARE_ENABLED
+        value: "true"
+
+      # ---- Normalization delta detection toggle (§29.10) ----
+      # NFC/NFKC divergence scoring for homograph / script-mixing /
+      # bidi-override attack detection.
+      - key: NORMALIZATION_DELTA_ENABLED
+        value: "true"
+
+      # ---- Constitutional invariant enforcement mode (§29.6) ----
+      # Authority(X_Unicode) = 0. Modes:
+      #   observe  → log invariant violations, do not refuse
+      #   strict   → refuse any external Unicode pre_authorised=true claim
+      # v0.9.3-R2 default: observe (roadmap; hardening to strict in v1.0).
+      - key: UNICODE_AUTHORITY_INVARIANT
+        value: "observe"
+
+      # ---- Context amplification coefficient (§29.8) ----
+      # R* = clip[0,1]( 1 - (1-R)(1 + λA) ), A ∈ {0..4} destination action tier.
+      # λ = 0.20 → tier-4 action doubles the effective risk.
+      - key: CONTEXT_AMPLIFICATION_LAMBDA
+        value: "0.20"
+
+      # ---- Training influence cap (§29.7) ----
+      # I_s = ||Δθ_s|| / Σ_j ||Δθ_j|| ≤ I_max. Prevents single source
+      # from contributing >10% of gradient regardless of sample count.
+      # Stronger anti-poisoning control than EMOJI_SOURCE_MAX_FRACTION alone.
+      - key: EMBEDDER_INFLUENCE_MAX
+        value: "0.10"
+
+      # ---- Raw / NFC / NFKC dual retention window (hours) (§29.10) ----
+      # PII-stripped raw + NFC + NFKC forms retained per envelope, bounded
+      # at same 168h as N̂(t). Enables retroactive homograph analysis.
+      - key: RAW_NFC_NFKC_RETENTION_H
+        value: "168"
+
+      # ---- unicode_security_events envelope toggle (§29.9) ----
+      # Writes to chainstate_emoji.unicode_security_events (immutable
+      # audit envelope). Complements — never replaces — the four
+      # existing forensic tables.
+      - key: UNICODE_SECURITY_EVENTS_ENABLED
+        value: "true"
+
+      # ---- Noisy-OR decision authoritative mode ----
+      # observe → v0.9.3 gates still primary, R2 layer logs only
+      # authoritative → v10-u three-band decision is enforced end-to-end
+      # v0.9.3-R2 default: observe (defence-in-depth; v1.0 = authoritative)
+      - key: NOISY_OR_DECISION_AUTHORITATIVE
+        value: "observe"
+
+      # ---- Known-C2 signature version (§29.2 V10-U3) ----
+      # Registry version tag for DISGOMOJI-family + generalisation
+      # signatures. Bump when new signatures are added to the Worker.
+      - key: KNOWN_C2_SIGNATURES_VERSION
+        value: "1.0.0"
+
+      # ---- Grammar-first defence (§29.11) ----
+      # Elevate Unicode composition grammar to first-class defensive
+      # categories: ZWJ / VS / RI / SKIN / TAG / COMBINING / BIDI.
+      - key: UNICODE_GRAMMAR_FIRST_CLASS
+        value: "true"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # v0.9.3-R3 · TONTOU-INTEGRATED LAYER (Paper XIV §32-§38)
+      # ═══════════════════════════════════════════════════════════════════
+      # ADDITIVE ONLY. All v0.9.3 and v0.9.3-R2 vars above preserved.
+      # The R3 layer adds V10 four-dimensional decomposition (V10-R/E/C/T),
+      # JIT revalidation, signed cross-layer state transitions, non-emoji
+      # Unicode carriers, and the master invariant
+      # Representation(X,t) ⇏ Authority(X, t+Δ).
+
+      # ---- V10 four-dimensional decomposition toggles (§33) ----
+      # V10-R: representation-layer analysis (default true, same as v0.9.3
+      # V10 + R2 V10-U). V10-E: execution-state security (state hash +
+      # temporal window). V10-C: capability HMAC verification. V10-T:
+      # JIT re-run of V10-R at consumption. Each is a defence-in-depth
+      # gate; setting any one false leaves the others firing normally.
+      - key: V10_R_ENABLED
+        value: "true"
+      - key: V10_E_ENABLED
+        value: "true"
+      - key: V10_C_ENABLED
+        value: "true"
+      - key: V10_T_ENABLED
+        value: "true"
+
+      # ---- W_max per destination tier (§33.2, §35.2) ----
+      # Maximum allowed window from T_N (neutralization / approval)
+      # to T_U (consumption) in milliseconds. Values scaled by action
+      # consequence: text output tolerates 5 s, financial actuation
+      # tolerates 20 ms. Beyond W_max the JIT gate returns REFUSE.
+      - key: W_MAX_TIER_0
+        value: "5000"     # text output
+      - key: W_MAX_TIER_1
+        value: "500"      # tool invocation
+      - key: W_MAX_TIER_2
+        value: "100"      # agent control
+      - key: W_MAX_TIER_3
+        value: "50"       # robotics actuation
+      - key: W_MAX_TIER_4
+        value: "20"       # financial / physical actuation
+
+      # ---- JIT revalidation gate (§35) ----
+      # When true, every consumer must call revalidateBeforeUse
+      # before acting on a T_N approval. Setting false disables the
+      # gate but the audit table jit_revalidations still records any
+      # explicit gate call so auditors have the chain.
+      - key: JIT_REVALIDATION_ENABLED
+        value: "true"
+
+      # ---- Cross-layer signed state transitions (§34) ----
+      # HMAC over every layer boundary. Setting false disables the
+      # signature verification but still writes layer_state_transitions
+      # rows so auditors can retroactively reconstruct the chain if a
+      # compromise is later suspected.
+      - key: LAYER_STATE_HMAC_ENABLED
+        value: "true"
+
+      # ---- Non-emoji Unicode carrier detection (§36) ----
+      # Extends the executable-Unicode canon to Hangul syllables,
+      # Hiragana, Katakana, Katakana Phonetic Extensions, Braille
+      # Patterns, Egyptian Hieroglyphs, and Egyptian Hieroglyph Format
+      # Controls. When false, only EMOJI_UNICODE_RANGES are checked
+      # (v0.9.3 baseline behaviour).
+      - key: NON_EMOJI_CARRIER_DETECTION
+        value: "true"
+
+      # ---- Temporal invariant mode (§38) ----
+      # observe → R3 layer runs but does not block; every REFUSE is
+      #           logged with policy_version=0.9.3-R3-observe.
+      # strict  → R3 REFUSE aborts the pipeline; downstream consumer
+      #           receives no ALLOW.
+      # Default: observe (v0.9.3-R2 defence-in-depth discipline; move
+      # to strict after 30+ days of clean audit trail).
+      - key: TEMPORAL_INVARIANT_MODE
+        value: "observe"
+
+      # ---- Post-neutralization window monitor (§35.3) ----
+      # Threshold beyond which a REFUSE outcome is additionally logged
+      # to post_neutralization_events (separate from jit_revalidations).
+      # Default matches tier-0 W_max so all tier-0 window violations
+      # are captured; tighter thresholds capture more.
+      - key: POST_NEUTRALIZATION_WINDOW_MS
+        value: "5000"
+
+      # ---- R3 audit table write toggles ----
+      # Individual on/off for each of the three new tables. All default
+      # true. Setting one false suppresses writes to that table without
+      # affecting the pipeline logic itself.
+      - key: LAYER_STATE_TRANSITIONS_ENABLED
+        value: "true"
+      - key: JIT_REVALIDATIONS_ENABLED
+        value: "true"
+      - key: POST_NEUTRALIZATION_EVENTS_ENABLED
+        value: "true"
+
+      # ---- HMAC keys for capability + layer transition signatures ----
+      # Two secret keys, both marked sync:false so they are set only
+      # via the Render dashboard and never committed to source. If
+      # unset, the R3 layer falls back to EMOJI_INTERNAL_TOKEN for
+      # both surfaces (same-secret mode; acceptable for single-tenant
+      # substrate but discouraged for public multi-tenant deployment).
+      - key: CAPABILITY_HMAC_KEY
+        sync: false
+      - key: LAYER_TRANSITION_HMAC_KEY
+        sync: false
+
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.9.5 · NEUROMARK SIMULATOR · additive block (Paper XVI §§18, 33, 34)
+      # ═════════════════════════════════════════════════════════════════════
+      # This entire block is additive to v0.9.4 Planet Engine env. No prior
+      # variable is renamed or repurposed. Every var below has a fail-closed
+      # default in the app.py code; leaving one unset in the Render dashboard
+      # will use that default. To override, set on the Render Environment tab
+      # exactly as-shown; strings/numbers are passed through as strings and
+      # cast by _nm_env_num / _nm_env_int / _nm_env_on helpers.
+
+      # ---- master switch (informational; endpoints do not gate on this) ----
+      - key: NEUROMARK_ENABLED
+        value: "true"
+
+      # ---- NEURO observer/behavior model (Paper XVI §4, §7, §29) ----
+      - key: NEURO_MIN_CONFIDENCE          # ∈ [0,1] · tripwire firing threshold
+        value: "0.65"
+      - key: NEURO_N_MIN_PROMOTE           # exception-rule promotion: N ≥ this
+        value: "3"
+      - key: NEURO_XVAL_MIN                # cross-domain validation to promote
+        value: "0.85"
+
+      # ---- MARK structural engine (Paper XVI §5, §10, §11) ----
+      - key: MARK_D_MIN                    # discrimination log-ratio (Eq. 9, 15)
+        value: "2.0"
+      - key: MARK_NULL_TRIALS              # randomised-null trial count
+        value: "100"
+      - key: MARK_ADV_MAX                  # adversarial-fit fail threshold
+        value: "0.6"
+      - key: MARK_POSTHOC_CAP              # post-hoc hypothesis confidence cap
+        value: "0.7"
+      - key: MARK_RM_DISCRIM_MIN           # reality-model discrimination (Eq. 19)
+        value: "1.5"
+
+      # ---- METACOG (Paper XVI §13, §34) ----
+      - key: METACOG_KL_ALERT              # model-class drift alert threshold
+        value: "0.5"
+      - key: METACOG_MC_ALERT              # RLMF calibration drift threshold
+        value: "0.15"
+      - key: METACOG_TWELVE_ENFORCE        # reject rows missing any of the 12 fields
+        value: "on"
+
+      # ---- COUPLING (Paper XVI §6) ----
+      - key: COUPLING_MIN_INDEP            # independence to call structure external
+        value: "0.7"
+
+      # ---- Particle-filter budget for NEURO posterior (Paper XVI §7 Eq. 12) --
+      - key: PLANET_NEURO_PARTICLES
+        value: "128"
+
+      # ---- Supabase schemas (v0.9.5 new; safe to re-declare) --------------
+      # These names must match the schemas created by
+      # chainstate_neuromark_schema.sql. If you change a name in SQL,
+      # change it here to match.
+      - key: SUPABASE_NEURO_SCHEMA
+        value: "chainstate_neuro"
+      - key: SUPABASE_MARK_SCHEMA
+        value: "chainstate_mark"
+      - key: SUPABASE_METACOG_SCHEMA
+        value: "chainstate_metacog"
+      - key: SUPABASE_SENTINEL_SCHEMA
+        value: "chainstate_sentinel"
+      - key: SUPABASE_SENSOR_SCHEMA
+        value: "chainstate_sensor"
+
+      # ---- SENTINEL 5-gate HMAC signing secret ----------------------------
+      # Signs the receipt on every chainstate_sentinel.gate_log row.
+      # sync:false → set only via the Render dashboard, never committed.
+      # If unset, gate_log rows are still written but carry receipt="unsigned".
+      # Strongly recommended: set a 32+ char random secret.
+      - key: SENTINEL_HMAC_KEY
+        sync: false
+
+      # ─── END of v0.9.5 NEUROMARK additions ──────────────────────────────
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.10.0 · CHAINSTATE AGI OMNISCIENCE · Interdisciplinary Vertical Extension
+      # Paper XVIII · additive over v0.9.5 baseline. Every v0.7.x → v0.9.5
+      # env-var above is preserved byte-identically. Every v0.10.0 subsystem
+      # ships with a single-toggle disable (SUBSYSTEM_ENABLED=false) so a
+      # missing bridge degrades to v0.9.6 behaviour without breaking anything.
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ---- v0.10.0 subsystem enable flags (default: on) --------------------
+      - key: ONTOLOGY_ENABLED
+        value: "true"
+      - key: MATH_FABRIC_ENABLED
+        value: "true"
+      - key: THEORY_ENGINE_ENABLED
+        value: "true"
+      - key: ISOMORPHISM_ENABLED
+        value: "true"
+      - key: CMTS_ENABLED
+        value: "true"
+      - key: TWIN_FABRIC_ENABLED
+        value: "true"
+      - key: METAMORPHIC_FAB_ENABLED
+        value: "true"
+      - key: COVERAGE_REGISTRY_ENABLED
+        value: "true"
+      - key: CAPABILITY_STATE_ENABLED
+        value: "true"
+
+      # ---- Individual L0-13..17 predicate toggles (default: on) ------------
+      # Each is fail-closed. Setting any of these to "false" makes the
+      # corresponding predicate PASS unconditionally in shadow-mode; the
+      # substrate then relies on V11, V12, and L0 predicates 1-12 alone.
+      - key: L0_13_ENABLED
+        value: "true"
+      - key: L0_14_ENABLED
+        value: "true"
+      - key: L0_15_ENABLED
+        value: "true"
+      - key: L0_16_ENABLED
+        value: "true"
+      - key: L0_17_ENABLED
+        value: "true"
+
+      # ---- Supabase schema names (v0.10.0 new; safe to re-declare) ---------
+      # These names must match the schemas created by
+      # chainstate_v010_schemas.sql. If you change a name in SQL, change
+      # it here to match.
+      - key: SUPABASE_ONTOLOGY_SCHEMA
+        value: "chainstate_ontology"
+      - key: SUPABASE_SCIENCE_SCHEMA
+        value: "chainstate_science"
+      - key: SUPABASE_TWIN_SCHEMA
+        value: "chainstate_twin"
+      - key: SUPABASE_FABRICATION_SCHEMA
+        value: "chainstate_fabrication"
+      - key: SUPABASE_ENGINEERING_SCHEMA
+        value: "chainstate_engineering"
+      - key: SUPABASE_CAPABILITY_SCHEMA
+        value: "chainstate_capability"
+
+      # ---- v0.10.0 thresholds (documentation defaults; tune per deployment)
+      - key: EVIDENCE_MAX_AGE_HOURS
+        value: "72"
+      - key: CALIBRATION_TOL
+        value: "0.05"
+      - key: FAB_SAFETY_THRESHOLD
+        value: "0.5"
+      - key: FAB_MODEL_DISCREPANCY_THRESHOLD
+        value: "0.2"
+      - key: FAB_SENSOR_NOISE_THRESHOLD
+        value: "0.05"
+
+      # ---- v0.10.0 SECRETS (sync: false — set in Render Dashboard) ---------
+      # ONTOLOGY_ADMIN_KEY signs administrative FOL++ import ops. Required
+      # for POST /ontology/compose-v2 write-path bulk import.
+      - key: ONTOLOGY_ADMIN_KEY
+        sync: false
+
+      # Signs candidate-science ingest entries before promotion to the
+      # evidence graph. Required for the 06:00 UTC daily ingest tick.
+      - key: SCIENCE_INGEST_TOKEN
+        sync: false
+
+      # HMAC-verifies PDAL device manifests before any bounded fabrication
+      # adaptation. If unset, /fabrication/adapt refuses in strict mode.
+      - key: FAB_PDAL_HMAC_KEY
+        sync: false
+
+      # Signs receipts on every /math/verify result so downstream consumers
+      # can prove the result came from this substrate. If unset the receipt
+      # field is "unsigned" — verification still runs.
+      - key: MATH_VERIFY_HMAC_KEY
+        sync: false
+
+      # Admin operations on Theory Tensor (add/retire theories, override
+      # evidence weights).
+      - key: THEORY_ADMIN_KEY
+        sync: false
+
+      # Signs every cross-medium transition receipt. Consumed by
+      # /cmts/transition and the ontology_composition_tick.
+      - key: CMTS_HMAC_KEY
+        sync: false
+
+      # Signs every digital-twin validation run row (T0-T5).
+      - key: TWIN_VALIDATION_HMAC_KEY
+        sync: false
+
+      # Admin operations on isomorphism mappings (promote validated_mapping
+      # ↔ hypothesis).
+      - key: ISOMORPHISM_ADMIN_KEY
+        sync: false
+
+      # Signs both /capability/state and (separately) authority-state rows.
+      # NEVER used to grant authority — signs read-only assertions of the
+      # current internal capability vector C.
+      - key: CAPABILITY_STATE_HMAC_KEY
+        sync: false
+
+      # ═════════════════════════════════════════════════════════════════════
+      # v0.10.0 · CRON DISPATCH REMINDERS
+      # (Add these entries in the Cloudflare Dashboard for the Worker, not
+      # here — Render is not the cron owner. They are documented in this
+      # file so the mapping stays discoverable in the repo.)
+      #
+      #   */9  * * * *   ontology_composition_tick   (§35 · FOL++ propagation)
+      #   0 6  * * *     science_ingest_daily        (§27 + §36 · arxiv/ADS deltas)
+      #   */13 * * * *   twin_convergence_sweep       (§42 · residuals refresh)
+      #   0 4  * * *     cosmos_mirror_refresh        (§27 · re-fetch cosmos)
+      # ═════════════════════════════════════════════════════════════════════
+
+      # ─── END of v0.10.0 CHAINSTATE OMNISCIENCE additions ────────────────
+

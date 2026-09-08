@@ -1,42 +1,271 @@
-# CHAINSTATE swarm-node Python requirements.
-# Install: pip install -r requirements.txt
+# =============================================================================
+# metastate-quantum · requirements.txt · v0.9.5 NEUROMARK SIMULATOR
+# (v0.9.5 adds no new pip packages — everything uses stdlib + existing sklearn.
+#  Documented additions per Paper XVI §18.2:
+#    · NEURO_* / MARK_* / METACOG_* / COUPLING_* / PLANET_NEURO_PARTICLES
+#      env vars read via os.environ (stdlib) — no new package
+#    · Bayesian sensor fusion — uses math.log / math.exp (stdlib)
+#    · SENTINEL 5-gate — uses hmac + hashlib + json (stdlib)
+#    · ExtraTrees reused from v0.9.4 sklearn>=1.3,<2.0 pin below)
+# ─────────────────────────────────────────────────────────────────────────
+# metastate-quantum · requirements.txt · v0.9.3 EMOJI MACHINE CODE
+# Full drop-in file (not a patch)
+# =============================================================================
+# Complete dependency set covering all subsystems:
+#   · v0.7.0-v0.7.7 quantum (IBM Runtime · Origin QPanda · Osaka OQTOPUS · Aer)
+#   · v0.7.8 perception (chainstate_perception schema)
+#   · v0.7.9 census (chainstate_census schema · APScheduler)
+#   · v0.8.0 robotics (Gemini via google-genai · chainstate_robotics schema)
+#   · v0.9.0 phasespace (astropy · skyfield · chainstate_phasespace schema)
+#   · v0.9.1 omnicognizant (sidechannel_bridge · chainstate_omnicognizant schema)
+#   · v0.9.2 c-field agi array (cfield_bridge · scikit-learn + joblib)
+#   · v0.9.3 emoji machine code (emoji_bridge · pure-Python 8088 disassembler +
+#                                 768-dim subspace embedder · chainstate_emoji)
+#
+# All packages pinned to versions Render's free-tier builder handles cleanly.
+# Fail-soft imports inside app.py mean any single missing package degrades
+# only its subsystem, not the whole service.
+# =============================================================================
 
-# ── core ─────────────────────────────────────────────────────────
-torch>=2.2.0
-numpy>=1.26.0
-scipy>=1.12.0
+# ---- Web framework + server ----
+fastapi>=0.110,<0.120
+uvicorn[standard]>=0.27,<0.30
+pydantic>=2.5,<3.0
+python-multipart>=0.0.9      # form-data upload support
 
-# ── HTTP / serving ───────────────────────────────────────────────
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-httpx>=0.27.0
-pydantic>=2.6.0
+# ---- HTTP client ----
+httpx>=0.27,<0.30
+requests>=2.31,<3.0
 
-# ── storage ──────────────────────────────────────────────────────
-redis>=5.0.0
-qdrant-client>=1.8.0
+# ---- Data + numerics ----
+numpy>=1.26,<2.0
+scipy>=1.11,<2.0
 
-# ── web3 / chain ─────────────────────────────────────────────────
-web3>=6.15.0
-eth-account>=0.11.0
+# ---- Scheduler (v0.7.9 census · v0.9.0 phase-space fallback) ----
+apscheduler>=3.10,<4.0
 
-# ── crypto ───────────────────────────────────────────────────────
-pycryptodome>=3.20.0
-pynacl>=1.5.0
-# CRYSTALS-Dilithium / Kyber bindings are loaded via the NWO security envelope;
-# install from your private wheel index, e.g.:
-#   pip install pq-crystals --extra-index-url <nwo-internal>
+# ---- Supabase (postgres via REST) ----
+# supabase 2.7+ uses realtime 2.x which is compatible with websockets 13+
+# (required for google-genai below). Do NOT pin realtime explicitly - let
+# supabase pull the right version, or the pip resolver will hit the same
+# conflict that broke the 2026-08-17 00:53 UTC Render build (v0.9.0 initial deploy).
+supabase>=2.7,<3.0
+postgrest>=0.16,<1.0
+gotrue>=2.9,<3.0
+storage3>=0.7,<1.0
+# realtime is pulled in transitively by supabase - unpinned intentionally.
+# The substrate uses REST only (postgrest); realtime subscriptions unused.
 
-# ── quantum (optional, for nodes that advertise capability=quantum) ──
-qiskit>=1.0.0
-qiskit-ibm-runtime>=0.20.0
-# Origin Wukong: install the vendor-supplied client from
-#   pip install origin-quantum-client
+# ---- Force compatible websockets ----
+# Explicit pin resolves conflicts between the supabase realtime peer
+# (needs websockets>=13 in 2.x line) and google-genai (needs websockets>=13).
+websockets>=13.0,<15.0
 
-# ── transformers (used in some symbolic preprocessing) ───────────
-transformers>=4.40.0
-tokenizers>=0.19.0
+# ---- Qiskit (IBM Quantum · IBM Runtime SamplerV2) ----
+# v0.7.7 quantum backend for /route and /chainstate/route
+qiskit>=1.0,<2.0
+qiskit-ibm-runtime>=0.20,<1.0
+qiskit-aer>=0.13,<1.0          # local statevector simulator (always available)
 
-# ── observability ────────────────────────────────────────────────
-prometheus-client>=0.20.0
-structlog>=24.1.0
+# ---- Origin QPanda (Origin Wukong · CPU fallback if wheel unavailable) ----
+# pyqpanda3 is a pip-only package with platform-specific wheels; installation
+# is best-effort via render.yaml buildCommand `|| echo unavailable`.
+# Not listed here so pip install --exit-code-on-fail=false skips it cleanly.
+# pyqpanda3>=3.0        # installed conditionally via buildCommand
+
+# ---- Osaka OQTOPUS (¹⁷¹Yb⁺ ion trap · quri-parts backend) ----
+# Best-effort · service falls back to Aer simulator if not installed
+# quri-parts>=15,<20             # optional · install manually if using Osaka
+# quri-parts-oqtopus>=0.2        # optional · Osaka OQTOPUS backend
+
+# ---- Google DeepMind Gemini Robotics (v0.8.0) ----
+# ER 2 is public-tier via Google AI Studio. VLA + On-Device 2 are PARKED
+# pending trusted-tester programme entry.
+# Pinned to a tight range to keep pip's resolver fast: without this pin,
+# the 2026-08-17 build spent 5+ seconds scanning through 0.8→0.3 candidates
+# looking for a websockets constraint match.
+google-genai>=0.7,<1.0
+
+# ---- Ethereum + cryptography ----
+eth-account>=0.11,<1.0
+eth-utils>=4.1,<5.0
+web3>=6.15,<7.0
+cryptography>=42.0,<45.0
+
+# ---- Hashing / encoding ----
+base58>=2.1,<3.0
+pynacl>=1.5,<2.0
+
+# ---- v0.9.0 · PHASESPACE dependencies ----
+# Both pure-Python · install cleanly on Render free tier · fail-soft imported
+# by phase_bridge.py (module degrades to stub behaviour if either missing).
+
+# ---- Astropy: astronomical ephemeris + time systems ----
+# Used by phase_bridge.celestial_fix() for J2000 coordinate transforms,
+# aberration correction, and pulsar-timing residual analysis.
+astropy>=6.0,<7.0
+
+# ---- Skyfield: satellite tracking + celestial mechanics ----
+# Used by phase_bridge.astroterm_ephemeris_tick() to compute TLE-derived
+# satellite positions when the substrate is in orbital-mode classification.
+skyfield>=1.48,<2.0
+
+# ---- Timezone handling (astropy Time needs this on some platforms) ----
+python-dateutil>=2.8,<3.0
+pytz>=2024.1
+
+# ---- Optional but recommended ----
+orjson>=3.9,<4.0               # faster JSON for FastAPI responses
+python-dotenv>=1.0,<2.0        # local .env support (never required in prod)
+
+# =============================================================================
+# v0.9.2 · CHAINSTATE C-FIELD AGI ARRAY additions (Paper XIII)
+# ADDITIVE ONLY. Every v0.7.x through v0.9.1 dependency above is preserved
+# byte-identically. The cfield_bridge module is fail-soft: if any of these
+# are missing at runtime, cfield_bridge will still import, endpoints return
+# a graceful service_unavailable response, and the substrate stays in
+# observe-only degraded posture. Add them for full functionality.
+# =============================================================================
+
+# ---- scikit-learn (EML shadow-substrate training + Bayesian attribution) ----
+# Used by cfield_bridge.map_invert_disturbance() for closed-form ridge MAP
+# inversion and by train_eml_shadow() for the EML pre-operational simulation.
+# ALSO reused by v0.9.3 emoji_bridge for the 768-dim subspace embedder's
+# ridge-MAP contrastive training path (fail-soft: hash projection covers).
+scikit-learn>=1.3,<2.0
+
+# ---- joblib (EML model persistence · substrate-internal caching) ----
+# Used by cfield_bridge to persist trained EML models between recycle ticks
+# so the substrate does not retrain from scratch every 6h.
+# Also used by v0.9.3 emoji_bridge to persist trained embedder state.
+joblib>=1.3,<2.0
+
+# =============================================================================
+# v0.9.3 · CHAINSTATE AGI EMOJI MACHINE CODE additions (Paper XIV)
+# ADDITIVE ONLY. Every v0.7.x through v0.9.2 dependency above is preserved
+# byte-identically. emoji_bridge is embedded directly in app.py to keep the
+# Render single-file deployment discipline. All dependencies below are
+# already pulled in by upstream requirements; this section documents which
+# packages emoji_bridge specifically uses so future maintainers can trace
+# them without re-reading app.py.
+#
+# No new hard dependencies are added by v0.9.3 — the emoji subsystem is
+# implemented entirely in pure Python (byte manipulation, hash-derived
+# projection, cosine correlation) with optional numpy / scikit-learn
+# acceleration where those are already present from v0.9.2.
+#
+# The internal 8088 disassembler is pure-Python and needs no external
+# package. Byte streams stay in list[int]; no ctypes, no capstone-py,
+# no external assembler — the substrate does NOT execute machine code
+# and would refuse to install any package that could.
+# =============================================================================
+
+# ---- Unicode utilities (built-in `unicodedata` sufficient) ----
+# No pinned dependency needed — the standard-library `unicodedata` module
+# provides everything the emoji code-point classifier requires. The full
+# emoji canon is enumerated statically from EMOJI_UNICODE_RANGES in
+# emoji_bridge; live unicodedata lookups are not needed at runtime.
+
+# ---- hmac + hashlib (built-in) — used for embedder/injection HMAC ----
+# emoji_bridge signs training epoch receipts and injection-scan records
+# with EMBEDDER_HMAC and INJECTION_HMAC from render.yaml. Standard lib.
+
+# ---- Optional acceleration (already present for v0.9.2) ----
+# scikit-learn (declared above) — enables Ridge-based contrastive training
+# joblib (declared above) — enables persistent embedder state across recycles
+# numpy (declared above) — enables vectorised aggregation of N̂(t)
+#
+# All three are used opportunistically; emoji_bridge falls back to pure
+# Python if any of them is unavailable at import time. This preserves the
+# fail-soft discipline documented in Paper XIV §21.
+
+# =============================================================================
+# v0.9.3-R2 · UNICODE SECURITY PLANE additions (Paper XIV §29 roadmap)
+# ADDITIVE ONLY. Every v0.7.x through v0.9.3 dependency above is preserved
+# byte-identically. The R2 upgrade — V10-U six sub-vetoes, noisy-OR
+# aggregation, 12-ISA static panel, interpreter-aware detection, context
+# amplification, constitutional invariant, training influence cap, unified
+# unicode_security_events envelope, raw/NFC/NFKC dual retention, Unicode
+# sequence grammar first-class — introduces ZERO new hard dependencies.
+#
+# Every R2 component is implemented in pure Python:
+#   · multi_isa_max_probability_py       — pure Python byte counting
+#   · detect_interpreter_patterns_py     — stdlib re
+#   · detect_known_c2_signatures_py      — stdlib re
+#   · normalization_delta_py             — stdlib unicodedata
+#   · classify_unicode_grammar_use_py    — pure Python codepoint iteration
+#   · assess_unicode_security_plane_py   — composes the above
+#   · noisy_or_aggregate_py              — pure Python arithmetic
+#   · noisy_or_decision_py               — pure Python decision policy
+#   · amplify_by_action_tier_py          — pure Python arithmetic
+#   · assert_unicode_authority_zero_py   — pure Python invariant assertion
+#   · check_training_influence_py        — pure Python gradient share
+#   · run_v10u_pipeline_py               — composes everything above
+#
+# The Worker-side JavaScript mirror uses only V8 built-ins (no npm deps).
+#
+# unicode_security_events writes go through the existing Supabase REST client
+# (supabase>=2.7,<3.0 already declared) — no new REST or DB library needed.
+# =============================================================================
+
+# ═══════════════════════════════════════════════════════════════════════════
+# v0.9.3-R3 · TONTOU-integrated layer (Paper XIV §32-§38) — no new hard deps
+# ═══════════════════════════════════════════════════════════════════════════
+# The R3 layer adds V10 four-dimensional decomposition (V10-R/E/C/T), JIT
+# revalidation, cross-layer signed state transitions, and non-emoji Unicode
+# carrier detection (Hangul, Kana, Braille, Egyptian hieroglyphs).
+#
+# All R3 primitives use Python stdlib only:
+#   - hmac + hashlib (SHA-256 HMAC for capability + layer transitions)
+#   - secrets (nonces + capability_id + transition_id)
+#   - json (stable-stringify canonical form for HMAC signing)
+#   - time (T_N / T_U timestamps in ms)
+#
+# The three new Supabase tables (layer_state_transitions, jit_revalidations,
+# post_neutralization_events) are DDL-only; supabase-py stays on the v0.9.3
+# minor. No new pip package is introduced by R3.
+#
+# R3-specific status: additive, defence-in-depth, single-toggle rollback via
+# V10_T_ENABLED=false / V10_E_ENABLED=false / LAYER_STATE_HMAC_ENABLED=false
+# individually or in combination. V10 and V10-U remain enforced architecturally
+# regardless.
+
+# ═════════════════════════════════════════════════════════════════════════
+# v0.10.0 · CHAINSTATE AGI OMNISCIENCE · Interdisciplinary Vertical Extension
+# Paper XVIII · additive over v0.9.5 baseline. Every v0.7.x → v0.9.5
+# dependency above is preserved byte-identically.
+#
+# HARD DEPENDENCIES ADDED BY v0.10.0: ZERO.
+#
+# The v0.10.0 verticals (Math Fabric, Theory Tensor, CMTS, Isomorphism
+# Mapper, Twin Fabric 2.0, Engineering Lifecycle, Metamorphic Fabrication,
+# Capability State, Coverage Registry) are implemented entirely in Python
+# stdlib (json, hashlib, hmac, math, time, datetime, os, typing). Every
+# optional science library below is fail-soft imported inside app.py — if
+# missing at runtime, only the specific capability degrades, and every
+# v0.9.x endpoint continues byte-identically.
+#
+# The Cloudflare Worker side (edge-worker.js) uses only V8 built-ins
+# (crypto.subtle, fetch, KVNamespace, TextEncoder). No npm dependencies
+# are introduced by v0.10.0.
+# ═════════════════════════════════════════════════════════════════════════
+
+# ---- OPTIONAL RECOMMENDATIONS (uncomment to activate the corresponding v0.10.0 capability)
+
+# Symbolic mathematics: enables full /math/formalize + /math/verify with
+# symbolic solving. Without it, /math/status reports have_sympy=false and
+# /math/verify falls back to numerical / metamorphic methods only.
+# sympy>=1.12,<2.0
+
+# SMT + theorem proving: enables the theorem-prover verification path in
+# /math/verify. Without it, that path returns validity="method_unavailable"
+# and the numerical path is used as a fallback. z3-solver has heavy platform-
+# specific wheels; test on Render's free tier before adding.
+# z3-solver>=4.12,<5.0
+
+# numpy is ALREADY listed above from v0.7.7 (Aer simulator dependency) so
+# no additional pin is required for v0.10.0. It is fail-soft imported by
+# _v010_math_verify() and unaffected if pinned elsewhere.
+
+# ─── END of v0.10.0 CHAINSTATE OMNISCIENCE additions ─────────────────────
+
