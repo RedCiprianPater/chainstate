@@ -233,6 +233,21 @@ binding = "CHAINSTATE_MARK_KV"
 id      = "<paste id from: wrangler kv namespace create CHAINSTATE_MARK_KV>"
 
 
+# ── v0.10.1 CHAINSTATE EDGE QSIM (2 bindings) ─────────────────────────────
+# Rate-limit counters · cached receipt indices · session hints · 24 h TTL
+# Never authoritative; source of truth is the chainstate_qsim Supabase schema
+# and the QsimReceipts contract on Base 8453.
+[[kv_namespaces]]
+binding = "CHAINSTATE_QSIM_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_QSIM_KV>"
+
+# Cached tail of chainstate_qsim.audit_ledger for operator introspection
+# at /v0101/audit/tail · 7-day TTL · never external-readable.
+[[kv_namespaces]]
+binding = "CHAINSTATE_QSIM_AUDIT_KV"
+id      = "<paste id from: wrangler kv namespace create CHAINSTATE_QSIM_AUDIT_KV>"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # R2 buckets · v0.7.x → v0.9.5 (all additive)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -290,6 +305,40 @@ bucket_name = "chainstate-world-snapshots"
 [[r2_buckets]]
 binding     = "CHAINSTATE_METACOG_R2"
 bucket_name = "chainstate-metacog-log"
+
+# ── v0.10.1 CHAINSTATE EDGE QSIM · R2 bucket managed via dashboard ─────────
+# The QSIM artifacts bucket `chainstate-qsim-artifacts` is intentionally
+# NOT bound here. It is created and locked down through the Cloudflare
+# dashboard (Public access: Disabled · CORS: `[]` · no custom domain).
+# The Worker's QSIM code does not require an R2 binding — receipts and
+# audit records land in the chainstate_qsim Supabase schema and on the
+# QsimReceipts contract (Base 8453). Leaving R2 unbound here preserves
+# the option to bind it later without touching the deploy pipeline.
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Durable Objects · v0.10.1 CHAINSTATE EDGE QSIM
+# One Durable Object namespace: per-AGI-session job coordinator.
+# The class QsimKernelDO is exported at the bottom of edge-worker.js.
+# ═══════════════════════════════════════════════════════════════════════════
+
+[[durable_objects.bindings]]
+name       = "QSIM_KERNEL_DO"
+class_name = "QsimKernelDO"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Migrations · v0.10.1 CHAINSTATE EDGE QSIM
+# Required for Cloudflare to create the QSIM_KERNEL_DO namespace on the
+# next `wrangler deploy`. Without this entry the dashboard cannot bind
+# the Durable Object, because a DO class becomes "known" to the control
+# plane only through a migration. new_sqlite_classes uses the SQLite-
+# backed DO storage (GA since April 2025).
+# ═══════════════════════════════════════════════════════════════════════════
+
+[[migrations]]
+tag                = "v0.10.1-qsim"
+new_sqlite_classes = ["QsimKernelDO"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -366,7 +415,9 @@ PERCEPTION_ENABLED        = "true"
 AUTONOMY_ENABLED          = "1"
 
 # ── v0.9.0 PHASESPACE ──────────────────────────────────────────────────────
-PHASE_ENABLED                 = "true"
+# NOTE: PHASE_ENABLED is stored as a SECRET on the live worker (encrypted).
+# Documented in the Secrets section at the bottom of this file. Do not
+# duplicate it as a plain var here.
 PHASE_TOPOLOGY_OVERRIDE       = ""
 PHASE_E_COSMIC_OVERRIDE       = ""
 CROSS_REALM_MIN_CONFIRMATIONS = "3"
@@ -387,9 +438,10 @@ SIDECHAN_INTAKE_SOURCES = ""
 # Sensor discovery timeout for edge probe (milliseconds).
 OMNI_SENSOR_PROBE_TIMEOUT_MS = "1500"
 
-# Substrate hardware fingerprint (SHA-256 hex). When set, integrity_reflection
-# tick compares against this; when unset, integrity check reports observed-only.
-SUBSTRATE_FINGERPRINT = ""
+# Substrate hardware fingerprint (SHA-256 hex). Stored as a SECRET on the
+# live worker (encrypted). Documented in the Secrets section at the bottom.
+# When set, integrity_reflection tick compares against this; when unset,
+# integrity check reports observed-only.
 
 # ── v0.9.2 C-FIELD ────────────────────────────────────────────────────────
 # Master switch for all C-FIELD subsystems.
@@ -551,6 +603,135 @@ COUPLING_MIN_INDEP          = "0.7"
 PLANET_NEURO_PARTICLES      = "128"
 
 
+# ── v0.10.1 CHAINSTATE EDGE QSIM ──────────────────────────────────────────
+# Master rollback: setting QSIM_ENABLED=false disables invokeQsim,
+# /receipt/:id, and both QSIM crons. The /qsim/* → 404 architectural rule
+# at the edge is enforced regardless of this flag.
+QSIM_ENABLED                = "false"
+
+# Hard caps — mirrored on the Supabase side as CHECK constraints so an
+# under-configured Worker cannot store an over-cap intent even if the
+# intent gate is bypassed.
+QSIM_MAX_QUBITS             = "30"
+QSIM_MAX_SECONDS            = "60"
+QSIM_MAX_BYTES              = "33554432"
+QSIM_INTENT_TTL_S           = "30"
+
+# Cadence of the two shared crons the QSIM subsystem hooks into.
+# Values must match the actual cron entries under [triggers] above.
+QSIM_KEY_ROTATION_MINUTES   = "5"
+QSIM_AUDIT_RECONCILE_HOURS  = "1"
+
+# Backend routing — the Render service that hosts /qsim/kernel/*.
+QSIM_KERNEL_BASE_URL        = "https://metastate-quantum.onrender.com"
+
+# Supabase project URL for the chainstate_qsim schema. Same project as
+# the existing CHAINSTATE Supabase; new isolated schema.
+QSIM_SUPABASE_URL           = "https://<your-project>.supabase.co"
+
+# Base mainnet 8453 QsimReceipts contract address. Leave empty until
+# the contract is deployed in Phase 3 (see MANUAL_SETUP_v0101_QSIM.md §9).
+QSIM_BASE_RECEIPTS_ADDR     = ""
+
+# The active AGI runtime instance's Ed25519 public key (hex, 0x-prefixed).
+# ROTATED on every AGI runtime restart. Update this value when the AGI
+# runtime rotates; the qsim_key_rotation_check cron detects the change
+# and records the new pubkey SHA-256 in CHAINSTATE_QSIM_KV.
+AGI_INTENT_PUBKEY           = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LIVE-WORKER SYNC · v0.9.0 → v0.10.0 gap fill
+# ═══════════════════════════════════════════════════════════════════════════
+# These 77 plain vars are set on the live Cloudflare Worker but were not
+# yet in this wrangler.toml. Values below are the exact values currently
+# deployed. Grouped alphabetically for reviewability.
+#
+# TYPOS PRESERVED FROM LIVE WORKER (fix at your discretion):
+#   V10_C_ENABLED = "tue"   (looks like missing "r" — should probably be "true")
+#   F_WEIGHT_ENACT = "`0.2" (has stray backtick prefix — should probably be "0.2")
+#   F_WEIGHT_TEXT = "`"     (just a backtick — value appears broken)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ANCHOR_ENABLED                   = "true"
+ANCHOR_SERVICE_URL               = "https://chainstate-anchor.onrender.com"
+ANCHOR_TIMEOUT_MS                = "10000"
+ANCHOR_URL                       = "https://chainstate-anchor.onrender.com"
+AUTONOMY_CRON_TIME               = "33 3 * * *"
+AUTONOMY_MAX_REGRESS_DEPTH       = "4"
+AUTONOMY_PRIORS_PER_CYCLE        = "8"
+BROADCAST_BACK_BETA              = "0.10"
+CACHE_TTL                        = "300"
+CARDIAC_HUB_URL                  = "https://nwo-robotics-api.onrender.com"
+CARDIAC_IDENTITY_HEADER          = "X-NWO-Cardiac-Root-Token-Id"
+CARDIAC_ORACLE_URL               = "https://nwo-oracle.onrender.com"
+CARDIAC_RELAYER_URL              = "https://nwo-relayer.onrender.com"
+CENSUS_THETA_ALERT               = "60"
+CENSUS_THETA_LOCKDOWN            = "85"
+CENSUS_WEIGHTS                   = "0.35,0.30,0.20,0.15"
+CONSENSUS_DEPTH                  = "3"
+CONTEXT_AMPLIFICATION_LAMBDA     = "0.20"
+DIALETHEISM_FIXED_POINT_EPSILON  = "0.02"
+DISASM_TIMEOUT_MS                = "500"
+EMBEDDER_TRAINING_MAX            = "16"
+EMOJI_AGGREGATE_RETENTION_H      = "168"
+EMOJI_COUNTER_RESPONSE_THRESHOLD = "1.0"
+EMOJI_DIALETHEIC_THETA           = "0.85"
+EMOJI_RESERVOIR_DENSITY_BASELINE = "0.42"
+EMOJI_SOURCE_MAX_FRACTION        = "0.03"
+EMOJI_SOURCE_RATE_LIMIT          = "200"
+ENACTIVIST_THRESHOLD             = "0.35"
+ENCODER_URL                      = "https://chainstate-encoder.onrender.com"
+FETCH_ALLOWLIST                  = "wikipedia.org,wikimedia.org,wiktionary.org,arxiv.org,export.arxiv.org,biorxiv.org,medrxiv.org,researchgate.net,huggingface.co,hf.space,static.hf.space,nwo.capital,publicae.org,nwocardiac.cloud,unicode.org,www.unicode.org,w3.org,www.w3.org,ietf.org,rfc-editor.org,ncbi.nlm.nih.gov,pubmed.ncbi.nlm.nih.gov,plato.stanford.edu,openalex.org,chainstate-worker.ciprianpater.workers.dev,chainstate-code.onrender.com,chainstate-encoder.onrender.com,chainstate-priors.onrender.com,nwo-capital-api.onrender.com,nwo-robotics-api.onrender.com,nwo-signal-spectrum.onrender.com,nwo-deerflow.onrender.com,nwo-ha.workers.dev,gibs.earthdata.nasa.gov,earthdata.nasa.gov,fragilestatesindex.org,mainnet.base.org,base.org,basescan.org,nwo-genetic-worker.ciprianpater.workers.dev,nwo-genetic-beacon.ciprianpater.workers.dev,nwo-blaster.ciprianpater.workers.dev,nwo-oracle.onrender.com,nwo-relayer.onrender.com,nwo-runner.ciprianpater.workers.dev,nwo-asm-beacon.ciprianpater.workers.dev,metastate-beacon.ciprianpater.workers.dev,cpater-metastate.hf.space,chainstate-anchor.onrender.com,chainstate-encoder.onrender.com,chainstate-priors.onrender.com,cpater-nwo-mark.static.hf.space"
+FETCH_MAX_BYTES                  = "500000"
+FETCH_STRIP_MAX_BYTES            = "20000"
+FETCH_TIMEOUT_MS                 = "15000"
+F_WEIGHT_ENACT                   = "`0.2"
+F_WEIGHT_GEO                     = "0.3"
+F_WEIGHT_TEXT                    = "`"
+GATEWAY_ENABLED                  = "1"
+GENOMIC_GUARDRAIL_OFF            = "false"
+HYPOTHESIS_DIVERGENCE_EPSILON    = "0.25"
+INJECTION_SCAN_SENSITIVITY       = "0.28"
+MEMO_PREFIX                      = "chainstate-worker"
+METASTATE_ENDPOINT               = "https://metastate-beacon.ciprianpater.workers.dev"
+METASTATE_PERCEPTION_URL         = "https://metastate-quantum.onrender.com"
+MIN_SUBSPACE_FRESHNESS_H         = "24"
+NEURO_ENDPOINT                   = "https://nwo-neuro.onrender.com"
+NEURO_V21_ENABLED                = "1"
+NOISY_OR_TAU_ALLOW               = "0.15"
+NOISY_OR_TAU_DENY                = "0.75"
+NWO_NEURO_FEEDBACK_URL           = "https://nwo-neuro-api.onrender.com/feedback"
+NWO_ROBOTICS_FEEDBACK_URL        = "https://nwo-robotics-api.onrender.com/feedback"
+ONTOLOGY_DELTA_WINDOW            = "1024"
+ORNITH_ADAPTER                   = "https://chainstate-code.onrender.com"
+POSTGRES_HTTP_URL                = "https://gwnbrjibsirazwbhhenc.supabase.co/rest/v1"
+POSTGRES_SCHEMA                  = "chainstate"
+POST_NEUTRALIZATION_WINDOW_MS    = "5000"
+PROVENANCE_SERVICE_URL           = "https://chainstate-provenance.onrender.com"
+R2_MODELS_BASE_URL               = "https://pub-1152e3172efb4fd7b9bd515896ae1945.r2.dev"
+RATE_LIMIT                       = "60"
+REFERRER_WALLET                  = "0x2E964e1c0e3Fa2C0dfD484B2E6D2189dfCF20958"
+REFLECT_MAX_FOLLOWUPS            = "3"
+RENDER_BASE_URL                  = "https://metastate-quantum.onrender.com"
+SEED_CRON_ENABLED                = "true"
+SEED_QUERIES                     = '[{"q":"enumerate the ecosystem tool surface from agent_md priors and the /ecosystem registry","target":"edge","memo":"seed:enumerate-tools"}]'
+SELFREF_CORRELATION_MIN          = "0.72"
+SELF_ATTR_EPOCH_BLOCKS           = "8192"
+SELF_REPRESENTATION_LOCK         = "on"
+SUPABASE_URL                     = "https://gwnbrjibsirazwbhhenc.supabase.co"
+SWARM_SIZE                       = "50"
+THREAT_CORR_MIN                  = "0.35"
+TOM_BASELINE_ANTHRO_RATIO        = "0.55"
+TOM_BASELINE_ANTHRO_STD          = "0.15"
+WORKER_VERSION                   = "v0.10.0"
+W_MAX_TIER_0                     = "5000"
+W_MAX_TIER_1                     = "500"
+W_MAX_TIER_2                     = "100"
+W_MAX_TIER_3                     = "50"
+W_MAX_TIER_4                     = "20"
+
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Secrets · set via `wrangler secret put NAME` (do NOT commit values)
 #
@@ -601,6 +782,63 @@ PLANET_NEURO_PARTICLES      = "128"
 #                                   Worker returns 200 so requests are not
 #                                   blocked. This is acceptable for dev but
 #                                   NOT for production auditability.
+#
+# ── v0.10.1 CHAINSTATE EDGE QSIM (4 secret names) ─────────────────────────
+#   QSIM_INTENT_HMAC_KEY          · HMAC-SHA256 defence-in-depth alongside the
+#                                   Ed25519 intent signature. Rotated together
+#                                   with AGI_INTENT_PUBKEY on runtime restart.
+#                                   Generate: openssl rand -hex 32
+#                                   Set:      wrangler secret put QSIM_INTENT_HMAC_KEY
+#   QSIM_SUPABASE_SERVICE_ROLE_KEY · Supabase service_role JWT scoped to the
+#                                   chainstate_qsim schema. Grants full
+#                                   read/write within the schema; RLS otherwise
+#                                   denies external reads. Use the SAME value
+#                                   on the Render service under the identical
+#                                   secret name.
+#                                   Set:      wrangler secret put QSIM_SUPABASE_SERVICE_ROLE_KEY
+#   QSIM_KERNEL_INTERNAL_TOKEN    · Shared secret between this Worker and the
+#                                   Render QSIM kernel. Sent as the
+#                                   X-QSIM-INTERNAL-TOKEN header on every
+#                                   /qsim/kernel/* invocation. Rotate in
+#                                   lock-step with the Render env-var value.
+#                                   Generate: openssl rand -hex 32
+#                                   Set:      wrangler secret put QSIM_KERNEL_INTERNAL_TOKEN
+#   QSIM_ADMIN_TOKEN              · Operator-only token for /v0101/audit/tail.
+#                                   Sent as X-CHAINSTATE-ADMIN-TOKEN by the
+#                                   operator. Rotate at operator discretion.
+#                                   Generate: openssl rand -hex 32
+#                                   Set:      wrangler secret put QSIM_ADMIN_TOKEN
+
+# ── LIVE-WORKER SYNC · secret names not previously documented ────────────
+# The following secret names are set on the live Cloudflare Worker but
+# were not documented above. Add them here for source-of-truth parity.
+# Values are encrypted; do NOT commit values — set with `wrangler secret put NAME`.
+#
+#   ANCHOR_QUEUE_TOKEN               · encrypted on live worker; sync as needed
+#   AUDIT_ADMIN_TOKEN                · encrypted on live worker; sync as needed
+#   CAPABILITY_STATE_HMAC_KEY        · encrypted on live worker; sync as needed
+#   CMTS_HMAC_KEY                    · encrypted on live worker; sync as needed
+#   ENACTIVIST_BEARER                · encrypted on live worker; sync as needed
+#   ENCODER_API_KEY                  · encrypted on live worker; sync as needed
+#   FAB_PDAL_HMAC_KEY                · encrypted on live worker; sync as needed
+#   INJECTION_HMAC                   · encrypted on live worker; sync as needed
+#   INTERNAL_CRON_TOKEN              · encrypted on live worker; sync as needed
+#   ISOMORPHISM_ADMIN_KEY            · encrypted on live worker; sync as needed
+#   MATH_VERIFY_HMAC_KEY             · encrypted on live worker; sync as needed
+#   METASTATE_API_KEY                · encrypted on live worker; sync as needed
+#   METASTATE_QUANTUM_URL            · encrypted on live worker; sync as needed
+#   NEURO_API_KEY                    · encrypted on live worker; sync as needed
+#   ONTOLOGY_ADMIN_KEY               · encrypted on live worker; sync as needed
+#   PHASE_ENABLED                    · MOVED from [vars] to Secret (encrypted on live worker)
+#   POSTGRES_HTTP_TOKEN              · encrypted on live worker; sync as needed
+#   PROVENANCE_SHARED_SECRET         · encrypted on live worker; sync as needed
+#   SCIENCE_INGEST_TOKEN             · encrypted on live worker; sync as needed
+#   SUBSTRATE_FINGERPRINT            · MOVED from [vars] to Secret (encrypted on live worker)
+#   SUPABASE_SERVICE_ROLE_KEY        · encrypted on live worker; sync as needed
+#   TESSERA_SERVICE_TOKEN            · encrypted on live worker; sync as needed
+#   THEORY_ADMIN_KEY                 · encrypted on live worker; sync as needed
+#   THREAT_CORR_TOKEN                · encrypted on live worker; sync as needed
+#   TWIN_VALIDATION_HMAC_KEY         · encrypted on live worker; sync as needed
 # ═══════════════════════════════════════════════════════════════════════════
 
-# ─── END of wrangler.toml · v0.9.5 NEUROMARK SIMULATOR ────────────────────
+# ─── END of wrangler.toml · v0.10.1 CHAINSTATE EDGE QSIM ──────────────────
