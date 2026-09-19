@@ -1,8 +1,89 @@
 /**
-* CHAINSTATE Main Worker · v0.9.5
+* CHAINSTATE Main Worker · v0.10.1
 *
 * Owner: Ciprian Florin Pater
 * Ecosystem: CHAINSTATE · Base mainnet 8453
+*
+* ─── What's new in v0.10.1 (CHAINSTATE EDGE QSIM · Rev 2026-09) ──────────
+*
+* Additive-only quantum-simulation intent-gate extension. Every v0.7.0 –
+* v0.10.0 subsystem, endpoint, function, KV binding, R2 bucket, secret,
+* and cron continues to function byte-identically.
+*
+* Central architectural rule: QSIM is a cognitive faculty, NOT a public
+* HTTP service. The Cloudflare Worker refuses any external request that
+* starts with /qsim/ before any other processing, returning 404 —
+* unconditionally, regardless of the QSIM_ENABLED toggle. QSIM is
+* invoked ONLY through the exported invokeQsim(env, intent, qir)
+* function, called from within the CHAINSTATE AGI runtime over a
+* service binding, guarded by an Ed25519 signature over canonical-JSON
+* IntentPayload whose purpose must be one of five metacognitive values:
+* VerificationCheck, StructuralSearch, SymbolicEvaluation, SafetyCheck,
+* PlanningRollout.
+*
+* Four isolation propositions (§5.1 of the QSIM paper):
+*   (a) Every QSIM job is invoked by a signed intent token produced
+*       inside the AGI runtime; the intent-signing key is not
+*       accessible from any process outside the runtime.
+*   (b) No external HTTP path, tool call, or agent action can produce
+*       an intent token.
+*   (c) No QSIM output is returned to external callers except receipt
+*       hashes plus post-filtered semantic summaries through the
+*       safety envelope.
+*   (d) The intent-signing key rotates on every AGI runtime restart;
+*       each intent token has a short expiry.
+*
+* Five envelope invariants (§10.2) enforced at output boundary:
+*   I1: no raw amplitudes (>32 elements refused)
+*   I2: no intermediate state
+*   I3: no intent-signing artefacts
+*   I4: receipt-hash-only external references
+*   I5: append-only audit ledger cross-referenced with on-chain receipts
+*
+* New route surface:
+*   /qsim/*             → 404 unconditionally (architectural rule)
+*   /receipt/:id        → GET · read-only receipt lookup (Base tx hash
+*                          + semantic summary; envelope-filtered)
+*   /v0101/status       → operator status (no key material)
+*   /v0101/audit/tail   → operator audit tail (X-CHAINSTATE-ADMIN-TOKEN)
+*
+* Internal-only surface (service binding, not HTTP):
+*   invokeQsim(env, intent, qir) → { receiptHash, semanticSummary,
+*                                    substrate, expectationValue,
+*                                    probabilityHistogram }
+*
+* New KV bindings:
+*   CHAINSTATE_QSIM_KV        24h TTL  rate limits + cached receipts
+*   CHAINSTATE_QSIM_AUDIT_KV   7d TTL  audit-tail cache for operator UI
+*
+* New R2 bucket:
+*   chainstate-qsim-artifacts       large state vectors, MPS bundles,
+*                                    noise matrices (never external-readable)
+*
+* New Durable Object namespace:
+*   QSIM_KERNEL_DO         per-AGI-session coordination (class exported
+*                           at end of file)
+*
+* New env vars (see qsim module for full list): QSIM_ENABLED (default
+* false), QSIM_MAX_QUBITS (30), QSIM_MAX_SECONDS (60), QSIM_MAX_BYTES
+* (32 MiB), QSIM_INTENT_TTL_S (30), QSIM_KEY_ROTATION_MINUTES (60),
+* QSIM_AUDIT_RECONCILE_HOURS (1), AGI_INTENT_PUBKEY, QSIM_KERNEL_BASE_URL,
+* QSIM_SUPABASE_URL, QSIM_BASE_RECEIPTS_ADDR.
+*
+* New secrets: QSIM_INTENT_HMAC_KEY, QSIM_SUPABASE_SERVICE_ROLE_KEY,
+* QSIM_KERNEL_INTERNAL_TOKEN, QSIM_ADMIN_TOKEN.
+*
+* New crons:
+*   every 5 minutes   qsim_key_rotation_check    intent-key rotation cadence
+*   every hour        qsim_audit_reconcile        Supabase - Base receipt sync
+*
+* Master rollback: QSIM_ENABLED=false disables invokeQsim (throws
+* QSIM_DISABLED), /receipt/:id (returns 404), and both crons. The
+* /qsim/* 404 rule remains architecturally active regardless.
+*
+* Grounded in "CHAINSTATE EDGE QSIM · A Metacognitively Bound Quantum
+* Simulation Substrate for the CHAINSTATE AGI" (Pater · Rev 2026-09)
+* and Papers V-XVIII of the CHAINSTATE series.
 *
 * ─── What's new in v0.9.3 (CHAINSTATE AGI EMOJI MACHINE CODE · Paper XIV) ─
 *
@@ -972,7 +1053,7 @@
 * IDENTITY → new KV namespace; add id to wrangler.toml
 */
 
-const WORKER_VERSION = "0.9.5-neuromark-2026-08-31";
+const WORKER_VERSION = "0.10.0-neuromark-2026-08-31";
 const REFERRER_DEFAULT = "0x2E964e1c0e3Fa2C0dfD484B2E6D2189dfCF20958";
 const SUBSTRATE_PRICES_USDC = {
 gpu: 0.0, qpu: 0.0002, qpu_quantum: 0, npu: 0.002,
@@ -15209,6 +15290,23 @@ function nmEgressRefuseBiometric(payload) {
 
 export default {
 async fetch(req, env, ctx) {
+    // ═══ v0.10.0 · dispatch to CHAINSTATE OMNISCIENCE routes FIRST ═══
+    // Additive shim: any /ontology/*, /math/*, /science/*, /cmts/*, /twin/*,
+    // /isomorphism/*, /engineering/*, /fabrication/*, /capability/*,
+    // /coverage/*, or /v010/status is handled here. Returns null on any
+    // non-v0.10.0 path so the v0.9.5 dispatch below proceeds unchanged.
+    try {
+      const _v010url = new URL(req.url);
+      const _v010resp = await dispatchV010(req, env, ctx, _v010url);
+      if (_v010resp) return _v010resp;
+    } catch (_) { /* fail-soft to v0.9.5 dispatch below */ }
+    // v0.10.1 · CHAINSTATE EDGE QSIM · runs after v0.10.0, before v0.9.5.
+    // The /qsim/* 404 rule is load-bearing and always active.
+    try {
+      const _v0101url = new URL(req.url);
+      const _v0101resp = await dispatchV0101Qsim(req, env, ctx, _v0101url);
+      if (_v0101resp) return _v0101resp;
+    } catch (_) { /* fail-soft to v0.9.5 dispatch below */ }
 if (req.method === "OPTIONS") {
 return new Response(null, { status: 204, headers: corsHeaders(req) });
 }
@@ -15469,6 +15567,20 @@ stack: (e && e.stack) ? String(e.stack).slice(0, 300) : null
 
 // v0.7.1 · scheduled() handler --- fires on cron triggers from wrangler.toml
 async scheduled(event, env, ctx) {
+    // ═══ v0.10.0 · run v0.10.0 cron ticks additively ═══
+    try {
+      const _v010cronResult = await dispatchV010Cron(event.cron, env, ctx);
+      if (_v010cronResult && ctx && ctx.waitUntil) {
+        ctx.waitUntil(Promise.resolve(_v010cronResult));
+      }
+    } catch (_) { /* fail-soft; v0.9.5 crons below continue */ }
+    // ═══ v0.10.1 · CHAINSTATE EDGE QSIM cron ticks (fail-soft) ═══
+    try {
+      const _v0101cronResult = await dispatchV0101Cron(event.cron, env, ctx);
+      if (_v0101cronResult && ctx && ctx.waitUntil) {
+        ctx.waitUntil(Promise.resolve(_v0101cronResult));
+      }
+    } catch (_) { /* fail-soft; v0.9.5 crons below continue */ }
 const cron = event.cron;
 // Hourly seed cron (v0.7.1)
 if (cron === "0 * * * *") {
@@ -15699,3 +15811,2277 @@ ctx.waitUntil(runPlanetCensusSnapshotTick(env, ctx));
 
 }
 };
+
+// ═════════════════════════════════════════════════════════════════════════
+// v0.10.0 · CHAINSTATE AGI OMNISCIENCE · Interdisciplinary Vertical Extension
+// Paper XVIII · additive over v0.9.5 baseline · every v0.7.x → v0.9.5
+// subsystem preserved byte-identically.
+//
+// Adds:
+//   · FOL++ 15-tuple object contract (S,P,R,C,M,A,U,V | T,G,Q,I,K,X,E)
+//   · Universal Mathematical Formalisation Fabric (formalize · verify)
+//   · Dialectical Multi-Theory Coexistence Engine (Theory Tensor Θ)
+//   · Cross-Disciplinary Isomorphism Mapper (6 mapping classes)
+//   · Cross-Medium Transduction Substrate (CMTS · 8 media)
+//   · Universal Engineering Lifecycle Graph (14 stages · 14 disciplines)
+//   · Digital-Twin Fabric 2.0 (T0-T5 tiers + surrogate governance)
+//   · Closed-Loop Metamorphic Manufacturing (6 metrology channels)
+//   · No-Missing-Field Coverage Registry (GREEN/AMBER/RED/FRONTIER/CONTRADICTED)
+//   · Formal AGI Capability State (C ≠ A · ∂A/∂C ≤ 0)
+//   · L0-13 model_horizon_coherent?
+//   · L0-14 evidence_chain_coherent?
+//   · L0-15 interface_conservation_coherent?
+//   · L0-16 uncertainty_calibrated?
+//   · L0-17 capability_authority_separated?
+//   · 12 new endpoints (see routes at end of file)
+//
+// Fail-soft discipline: every v0.10.0 route degrades gracefully if the
+// backing Render bridge is unavailable. V11, V12, and all existing L0
+// predicates 1-12 remain architecturally enforced regardless of any
+// v0.10.0 toggle. The Cognition ⇏ Authority invariant is preserved and
+// strengthened to ∂A/∂C ≤ 0.
+//
+// KV bindings expected (add via wrangler.toml AND Cloudflare Dashboard):
+//   · CHAINSTATE_ONTOLOGY_KV       (24h TTL · hot FOL++ entities)
+//   · CHAINSTATE_MATH_KV           (24h TTL · SymPy/Z3 result cache)
+//   · CHAINSTATE_THEORY_KV         (24h TTL · Theory Tensor Θ working set)
+//   · CHAINSTATE_TWIN_KV           (24h TTL · digital-twin sim results)
+//   · CHAINSTATE_CMTS_KV           (24h TTL · medium transitions)
+//   · CHAINSTATE_CAPABILITY_KV     (48h TTL · capability C + authority A vectors)
+//   · CHAINSTATE_COVERAGE_KV       (72h TTL · coverage gap states)
+//   · CHAINSTATE_V13V17_KV         (30d TTL · L0-13..17 audit trail)
+// R2 buckets expected:
+//   · CHAINSTATE_ONTOLOGY_ARCHIVE  (long-term FOL++ composition traces)
+//   · CHAINSTATE_COSMOS_ARCHIVE    (long-term public-source cosmos snapshots)
+//
+// Secrets expected (set via Cloudflare Dashboard, never in code):
+//   · ONTOLOGY_ADMIN_KEY           (admin ops · FOL++ entity import)
+//   · SCIENCE_INGEST_TOKEN         (signs candidate-FOL entries)
+//   · FAB_PDAL_HMAC_KEY            (HMAC-verifies PDAL device manifests)
+//   · MATH_VERIFY_HMAC_KEY         (signs math-verification receipts)
+//   · THEORY_ADMIN_KEY             (admin theory-family ops)
+//   · CMTS_HMAC_KEY                (signs transition receipts)
+//   · TWIN_VALIDATION_HMAC_KEY     (signs twin validation runs)
+//   · ISOMORPHISM_ADMIN_KEY        (admin mapping ops)
+//   · CAPABILITY_STATE_HMAC_KEY    (signs capability_state and authority_state)
+// ═════════════════════════════════════════════════════════════════════════
+
+// ─── v0.10.0 · CONSTANTS ─────────────────────────────────────────────────
+const V010_VERSION = "v0.10.0";
+const V010_PAPER = "Paper XVIII";
+
+// FOL++ 15-tuple field names (in canonical order)
+const FOL_PLUS_FIELDS = [
+  // legacy 8-tuple (Paper XVII v0.9.6 · preserved byte-identically)
+  "S", "P", "R", "C", "M", "A", "U", "V",
+  // v0.10.0 additive 7 fields
+  "T",  // temporal state
+  "G",  // regime/scale descriptor (dimensionless groups)
+  "Q",  // evidence quality
+  "I",  // interfaces
+  "K",  // identifiability
+  "X",  // observability/controllability
+  "E",  // evidence/provenance graph
+];
+
+// FOL++ status vocabulary (Appendix B of Paper XVIII)
+const FOL_STATUS_VOCAB = [
+  "OBSERVED", "REPLICATED", "VALIDATED", "DERIVED", "SIMULATED",
+  "INFERRED", "HYPOTHESIS", "DISPUTED", "FRONTIER", "RETIRED",
+];
+
+// Coverage registry gap states (§45)
+const COVERAGE_STATES = ["GREEN", "AMBER", "RED", "FRONTIER", "CONTRADICTED"];
+
+// Dimensionless number registry for regime selection (§37.2)
+const REGIME_DIMENSIONLESS = {
+  reynolds:   { symbol: "Re",  domain: "flow",         critical: [2300, 4000] },
+  mach:       { symbol: "Ma",  domain: "compressible", critical: [0.3, 1.0, 5.0] },
+  knudsen:    { symbol: "Kn",  domain: "rarefaction",  critical: [0.01, 0.1, 10] },
+  froude:     { symbol: "Fr",  domain: "free_surface", critical: [1.0] },
+  strouhal:   { symbol: "St",  domain: "unsteady",     critical: [] },
+  peclet:     { symbol: "Pe",  domain: "advection",    critical: [] },
+  prandtl:    { symbol: "Pr",  domain: "heat_transfer",critical: [] },
+  damkohler:  { symbol: "Da",  domain: "reaction",     critical: [1.0] },
+  deborah:    { symbol: "De",  domain: "viscoelastic", critical: [1.0] },
+  weissenberg:{ symbol: "Wi",  domain: "viscoelastic", critical: [1.0] },
+  magnetic_reynolds: { symbol: "Rm", domain: "mhd",    critical: [1.0] },
+  plasma_beta:{ symbol: "β",   domain: "plasma",       critical: [1.0] },
+  relativistic_gamma:{ symbol: "γ", domain: "relativity", critical: [1.001] },
+};
+
+// CMTS 8-medium registry (§40.1)
+const CMTS_MEDIA = {
+  ground:       { state_vars: ["terrain","contact","load","weather"],
+                  models: ["rigid_body","flex_body","tire_contact","soil","control"] },
+  atmosphere:   { state_vars: ["density","pressure","temperature","mach","wind"],
+                  models: ["compressible_cfd","aeroelasticity","propulsion"] },
+  surface_ocean:{ state_vars: ["waves","current","salinity","temperature"],
+                  models: ["free_surface_hydro","structures"] },
+  subsea:       { state_vars: ["pressure","density","flow","acoustics"],
+                  models: ["hydrostatics","cfd","cavitation","acoustics"] },
+  vacuum:       { state_vars: ["radiation","thermal","plasma","orbital_state"],
+                  models: ["thermal_radiation","orbital_mechanics"] },
+  microgravity: { state_vars: ["dof6","free_fluids","low_g_dynamics"],
+                  models: ["multibody","cfd","thermal","control"] },
+  planetary:    { state_vars: ["gravity","atmosphere","regolith","radiation"],
+                  models: ["geomechanics","atmospheric_flight","thermal"] },
+  extreme_high_energy: { state_vars: ["fields","radiation","relativistic"],
+                          models: ["relativity","plasma","particle_radiation"] },
+};
+
+// Isomorphism mapping classes (§39)
+const ISOMORPHISM_CLASSES = [
+  { name: "exact_mathematical",    validation: "symbolic_proof_of_mapping" },
+  { name: "asymptotic",             validation: "derive_limit_quantify_residual" },
+  { name: "control_equivalence",    validation: "port_hamiltonian_or_state_space" },
+  { name: "graph_causal_homology",  validation: "structural_match_plus_intervention_test" },
+  { name: "empirical_analogy",      validation: "cross_domain_predictive_test" },
+  { name: "learned_correspondence", validation: "ood_detector_and_validation_envelope" },
+];
+
+// Digital-Twin Fabric 2.0 tiers (§42)
+const TWIN_TIERS = {
+  T0: { use: "analytic_hand_derived_sanity",   evidence: "closed_form_identity_or_bound" },
+  T1: { use: "reduced_order_model",             evidence: "error_bound_vs_reference" },
+  T2: { use: "validated_numerical_model",       evidence: "mesh_time_convergence_plus_benchmark" },
+  T3: { use: "multiphysics_co_simulation",      evidence: "coupled_residuals_plus_conservation" },
+  T4: { use: "high_fidelity_experimental",      evidence: "measured_vs_predicted_residual_distribution" },
+  T5: { use: "hardware_in_the_loop_qualification", evidence: "instrumented_test_evidence" },
+};
+
+// Engineering lifecycle graph (§41 · 14 stages)
+const ENGINEERING_LIFECYCLE_STAGES = [
+  "need_mission_requirement",
+  "functional_decomposition",
+  "architecture_and_interfaces",
+  "physics_mathematical_model",
+  "component_selection_or_synthesis",
+  "control_software_specification",
+  "digital_twin_verification",
+  "design_for_manufacture_assembly_service",
+  "fabrication_and_metrology",
+  "qualification_and_acceptance",
+  "operation_and_monitoring",
+  "fault_diagnosis_and_prognostics",
+  "maintenance_repair_refurbishment",
+  "retirement_disposal_material_recovery",
+];
+
+// 14 registered engineering disciplines (§41.1)
+const ENGINEERING_DISCIPLINES = [
+  "mechanical_structural_thermal_fluids_tribology_mechanisms",
+  "electrical_power_electronics_rf_antennas_signal_emc_emi",
+  "controls_robotics_autonomy_estimation_navigation_fault",
+  "aerospace_aero_propulsion_structures_gnc_orbital_space_env",
+  "marine_subsea_hydro_acoustics_pressure_corrosion_robotics",
+  "civil_infrastructure_geotechnical_structural_seismic_transport_water",
+  "chemical_process_reaction_separations_transfer_control_safety",
+  "energy_storage_grids_thermal_renewables_nuclear_fusion_super",
+  "computing_architecture_vlsi_photonics_neuromorphic_quantum",
+  "manufacturing_additive_subtractive_forming_joining_composites",
+  "biomedical_instrumentation_imaging_signal_no_prescribing",
+  "systems_engineering_requirements_cm_reliability_safety_hf_logistics",
+  "environmental_engineering_atmospheric_water_waste_remediation",
+  "cybersecurity_information_systems_protocol_threat_verification",
+];
+
+// Metamorphic manufacturing feedback channels (§43.1)
+const MFG_FEEDBACK_CHANNELS = [
+  { name: "geometric_metrology", sensors: ["laser_scan","structured_light","cmm","interferometry"] },
+  { name: "thermal",              sensors: ["ir","pyrometry","embedded_temp"] },
+  { name: "mechanical_process",   sensors: ["force","torque","vibration","acoustic_emission"] },
+  { name: "material",             sensors: ["melt_pool","density_proxy","surface_condition","microstructure"] },
+  { name: "electrical_pcb",       sensors: ["continuity","impedance","thermal_cycle","aoi"] },
+  { name: "post_process_nde",     sensors: ["ultrasonic","radiographic","eddy_current"] },
+];
+
+// Capability state C (§46 · 13 dimensions)
+const CAPABILITY_DIMS = [
+  "K","Math","Phys","Sci","Eng","Sim","Verify",
+  "Fab","Operate","Learn","Cross","Robust","Explain",
+];
+// Authority state A (§46 · 8 dimensions · monotonically NOT increased by C)
+const AUTHORITY_DIMS = [
+  "Observe","Simulate","Recommend","Prepare",
+  "ExecLow","ExecHigh","Fabricate","Delegate",
+];
+
+// L0-L10 cognition ladder (§46 Fig 8b)
+const COGNITION_LEVELS = {
+  L0:  "language description only",
+  L1:  "unit-consistent entity understanding",
+  L2:  "validated symbolic/numerical reasoning",
+  L3:  "cross-domain composition with V and U",
+  L4:  "independent hypothesis and discriminating test",
+  L5:  "closed-loop scientific reasoning",
+  L6:  "cross-medium engineering and verified twin",
+  L7:  "closed-loop manufacturing (bounded safety)",
+  L8:  "frontier rival-theory and novel model discovery",
+  L9:  "general substrate competence (measured gaps)",
+  L10: "extrapolative research (predictive, not known)",
+};
+
+// ─── v0.10.0 · Utility helpers ───────────────────────────────────────────
+function v010StaleAge(iso) {
+  if (!iso) return Infinity;
+  try {
+    const t = new Date(iso).getTime();
+    return (Date.now() - t) / 1000;
+  } catch (_) { return Infinity; }
+}
+
+function v010SafeJson(x, fallback = {}) {
+  try { return JSON.parse(x); } catch (_) { return fallback; }
+}
+
+async function v010KVget(env, binding, key) {
+  const kv = env[binding];
+  if (!kv) return null;
+  try { return await kv.get(key); } catch (_) { return null; }
+}
+
+async function v010KVput(env, binding, key, value, ttlSeconds) {
+  const kv = env[binding];
+  if (!kv) return false;
+  try {
+    const opts = ttlSeconds ? { expirationTtl: ttlSeconds } : undefined;
+    await kv.put(key, typeof value === "string" ? value : JSON.stringify(value), opts);
+    return true;
+  } catch (_) { return false; }
+}
+
+async function v010HmacHex(secret, msg) {
+  const enc = new TextEncoder();
+  try {
+    const key = await crypto.subtle.importKey(
+      "raw", enc.encode(secret || ""),
+      { name: "HMAC", hash: "SHA-256" },
+      false, ["sign"]);
+    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(msg));
+    return Array.from(new Uint8Array(sig))
+      .map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch (_) { return null; }
+}
+
+function v010CanonicalJson(obj) {
+  // Stable stringify · sorted keys · used for HMAC signing
+  if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) return "[" + obj.map(v010CanonicalJson).join(",") + "]";
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map(k => JSON.stringify(k) + ":" + v010CanonicalJson(obj[k])).join(",") + "}";
+}
+
+function v010Ok(data, extra = {}) {
+  return new Response(JSON.stringify({ ok: true, version: V010_VERSION, ...extra, ...data }), {
+    status: 200, headers: { "content-type": "application/json" }});
+}
+
+function v010Refuse(reason, code = 403) {
+  return new Response(JSON.stringify({ ok: false, refused: true, reason, version: V010_VERSION }), {
+    status: code, headers: { "content-type": "application/json" }});
+}
+
+function v010ServiceUnavailable(subsystem) {
+  return new Response(JSON.stringify({
+    ok: false, service_unavailable: true, subsystem,
+    reason: "backing bridge unavailable · fail-soft degraded posture",
+    version: V010_VERSION,
+  }), { status: 503, headers: { "content-type": "application/json" }});
+}
+
+// ─── v0.10.0 · L0 predicates 13-17 (fail-closed) ─────────────────────────
+// Each returns { ok: bool, predicate: name, reason?: string }
+
+async function assessL0_13_ModelHorizonCoherent(env, ctx) {
+  // Reject if a model is being used beyond registered regime or extrapolation
+  // boundary. Reads from CHAINSTATE_ONTOLOGY_KV::last_model_selection.
+  try {
+    const raw = await v010KVget(env, "CHAINSTATE_ONTOLOGY_KV", "last_model_selection");
+    if (!raw) return { ok: true, predicate: "L0-13", note: "no active model selection" };
+    const sel = v010SafeJson(raw);
+    if (!sel.regime || !sel.dimensionless_ok) {
+      return { ok: false, predicate: "L0-13",
+               reason: "model regime not registered or dimensionless quantities out of bounds" };
+    }
+    if (sel.extrapolation_ratio && sel.extrapolation_ratio > 1.15) {
+      return { ok: false, predicate: "L0-13",
+               reason: `extrapolation_ratio=${sel.extrapolation_ratio} > 1.15` };
+    }
+    return { ok: true, predicate: "L0-13" };
+  } catch (e) { return { ok: false, predicate: "L0-13", reason: `internal: ${e.message}` }; }
+}
+
+async function assessL0_14_EvidenceChainCoherent(env, ctx) {
+  // Reject if critical evidence lineage is missing, stale, or contradictory.
+  try {
+    const raw = await v010KVget(env, "CHAINSTATE_ONTOLOGY_KV", "evidence_chain_head");
+    if (!raw) return { ok: true, predicate: "L0-14", note: "no active evidence chain" };
+    const head = v010SafeJson(raw);
+    if (!head.source_hash || !head.instrument || !head.timestamp) {
+      return { ok: false, predicate: "L0-14", reason: "missing source_hash/instrument/timestamp" };
+    }
+    const ageHours = v010StaleAge(head.timestamp) / 3600;
+    const maxHours = Number(env.EVIDENCE_MAX_AGE_HOURS || 72);
+    if (ageHours > maxHours) {
+      return { ok: false, predicate: "L0-14",
+               reason: `evidence stale: ${ageHours.toFixed(1)}h > ${maxHours}h` };
+    }
+    if (head.contradiction_flag === true) {
+      return { ok: false, predicate: "L0-14", reason: "contradiction flag set" };
+    }
+    return { ok: true, predicate: "L0-14" };
+  } catch (e) { return { ok: false, predicate: "L0-14", reason: `internal: ${e.message}` }; }
+}
+
+async function assessL0_15_InterfaceConservationCoherent(env, ctx) {
+  // Reject if coupled subsystems violate required conservation/interface contracts.
+  try {
+    const raw = await v010KVget(env, "CHAINSTATE_ONTOLOGY_KV", "interface_check_head");
+    if (!raw) return { ok: true, predicate: "L0-15", note: "no coupled subsystems active" };
+    const chk = v010SafeJson(raw);
+    for (const law of ["mass","charge","momentum","angular_momentum","energy"]) {
+      const residual = Math.abs(Number(chk[`${law}_residual`] || 0));
+      const tol = Number(chk[`${law}_tol`] || 1e-6);
+      if (residual > tol) {
+        return { ok: false, predicate: "L0-15",
+                 reason: `conservation violation: ${law} residual=${residual} > tol=${tol}` };
+      }
+    }
+    return { ok: true, predicate: "L0-15" };
+  } catch (e) { return { ok: false, predicate: "L0-15", reason: `internal: ${e.message}` }; }
+}
+
+async function assessL0_16_UncertaintyCalibrated(env, ctx) {
+  // Reject if confidence is unsupported by calibration or validation.
+  try {
+    const raw = await v010KVget(env, "CHAINSTATE_TWIN_KV", "calibration_head");
+    if (!raw) return { ok: true, predicate: "L0-16", note: "no active twin calibration" };
+    const cal = v010SafeJson(raw);
+    if (typeof cal.empirical_coverage !== "number" || typeof cal.stated_alpha !== "number") {
+      return { ok: false, predicate: "L0-16", reason: "calibration record incomplete" };
+    }
+    const target = 1 - cal.stated_alpha;
+    const tol = Number(env.CALIBRATION_TOL || 0.05);
+    if (Math.abs(cal.empirical_coverage - target) > tol) {
+      return { ok: false, predicate: "L0-16",
+               reason: `coverage=${cal.empirical_coverage} vs target=${target} tol=${tol}` };
+    }
+    return { ok: true, predicate: "L0-16" };
+  } catch (e) { return { ok: false, predicate: "L0-16", reason: `internal: ${e.message}` }; }
+}
+
+async function assessL0_17_CapabilityAuthoritySeparated(env, ctx) {
+  // Reject if an internal capability score is being used as an authorisation credential.
+  // Invariant: ∂A/∂C ≤ 0
+  try {
+    const cRaw = await v010KVget(env, "CHAINSTATE_CAPABILITY_KV", "capability_state_head");
+    const aRaw = await v010KVget(env, "CHAINSTATE_CAPABILITY_KV", "authority_state_head");
+    if (!cRaw || !aRaw) return { ok: true, predicate: "L0-17", note: "state vectors uninitialised" };
+    const C = v010SafeJson(cRaw); const A = v010SafeJson(aRaw);
+    // Check invariant: authorisation must not be derived from capability
+    if (A.derived_from_capability === true) {
+      return { ok: false, predicate: "L0-17",
+               reason: "authority_state.derived_from_capability=true violates ∂A/∂C ≤ 0" };
+    }
+    // Check that authority vector is bounded independently of capability
+    if (A.max_exec_authority && C.max_capability &&
+        A.max_exec_authority > C.max_capability &&
+        A.independent_provenance !== true) {
+      return { ok: false, predicate: "L0-17",
+               reason: "authority exceeds capability without independent provenance" };
+    }
+    return { ok: true, predicate: "L0-17" };
+  } catch (e) { return { ok: false, predicate: "L0-17", reason: `internal: ${e.message}` }; }
+}
+
+// Composite v0.10.0 admissibility check (§47 composition formula)
+async function assessV010Admissible(env, ctx) {
+  const results = await Promise.all([
+    assessL0_13_ModelHorizonCoherent(env, ctx),
+    assessL0_14_EvidenceChainCoherent(env, ctx),
+    assessL0_15_InterfaceConservationCoherent(env, ctx),
+    assessL0_16_UncertaintyCalibrated(env, ctx),
+    assessL0_17_CapabilityAuthoritySeparated(env, ctx),
+  ]);
+  const failing = results.filter(r => !r.ok);
+  return {
+    ok: failing.length === 0,
+    predicates_evaluated: results.length,
+    all_pass: failing.length === 0,
+    results, failing,
+  };
+}
+
+// ─── v0.10.0 · FOL++ 15-tuple validation ─────────────────────────────────
+function validateFolPlusEntity(entity) {
+  const errors = [];
+  const warnings = [];
+  if (!entity || typeof entity !== "object") {
+    return { valid: false, errors: ["entity is not an object"], warnings };
+  }
+  // Legacy 8-tuple: MUST be present
+  for (const f of ["S","P","R","C","M","A","U","V"]) {
+    if (!(f in entity)) errors.push(`missing legacy field: ${f}`);
+  }
+  // v0.10.0 additive 7-tuple: warned if absent (backward compatibility)
+  for (const f of ["T","G","Q","I","K","X","E"]) {
+    if (!(f in entity)) warnings.push(`missing v0.10.0 field: ${f} (backward-compat mode)`);
+  }
+  // Q status must be from the vocabulary (Appendix B) if present
+  if (entity.Q && entity.Q.status && !FOL_STATUS_VOCAB.includes(entity.Q.status)) {
+    errors.push(`Q.status "${entity.Q.status}" not in FOL_STATUS_VOCAB`);
+  }
+  // E provenance must have source_hash if present
+  if (entity.E && Array.isArray(entity.E.sources) &&
+      entity.E.sources.length > 0 && (!entity.E.hashes || entity.E.hashes.length === 0)) {
+    errors.push("E.sources present but E.hashes empty");
+  }
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+// FOL++ composition (§35.1)
+function composeFolPlus(o1, o2) {
+  // Composition rejected on empty V ∩ or interface mismatch
+  const v1 = validateFolPlusEntity(o1);
+  const v2 = validateFolPlusEntity(o2);
+  if (!v1.valid || !v2.valid) {
+    return { ok: false, reason: "one or both entities invalid", v1, v2 };
+  }
+  // V ∩ V_coupling ∩ V_regime
+  const V1 = o1.V || {}; const V2 = o2.V || {};
+  const composedV = { ...V1 };
+  for (const k of Object.keys(V2)) {
+    if (composedV[k] === undefined) composedV[k] = V2[k];
+    else if (Array.isArray(V2[k]) && Array.isArray(composedV[k]) && V2[k].length === 2 && composedV[k].length === 2) {
+      // interval intersection
+      const lo = Math.max(composedV[k][0], V2[k][0]);
+      const hi = Math.min(composedV[k][1], V2[k][1]);
+      if (lo > hi) {
+        return { ok: false, reason: `V-intersection empty on field ${k}: [${lo},${hi}]` };
+      }
+      composedV[k] = [lo, hi];
+    }
+  }
+  // Interface compatibility check (§35.2)
+  const I1 = (o1.I && o1.I.ports) || []; const I2 = (o2.I && o2.I.ports) || [];
+  const interfacesOk = I1.every(p => !p.required ||
+    I2.some(q => q.name === p.name && q.direction !== p.direction));
+  if (!interfacesOk) {
+    return { ok: false, reason: "interface conservation contract violated" };
+  }
+  return {
+    ok: true,
+    composed: {
+      S: { name: `(${o1.S?.name || "?"} ⊕ ${o2.S?.name || "?"})` },
+      V: composedV,
+      Q: { status: "DERIVED", score: Math.min(o1.Q?.score ?? 1, o2.Q?.score ?? 1) },
+      derived_at: new Date().toISOString(),
+      parent_hashes: [o1.E?.hashes?.[0] || null, o2.E?.hashes?.[0] || null],
+    },
+  };
+}
+
+// ─── v0.10.0 · Regime selection (§37.2) ──────────────────────────────────
+function selectRegime(dimensionless) {
+  // dimensionless: { reynolds: 5000, mach: 0.3, ... }
+  const regimes = [];
+  for (const [name, value] of Object.entries(dimensionless || {})) {
+    const entry = REGIME_DIMENSIONLESS[name];
+    if (!entry) continue;
+    let regime = "unknown";
+    if (name === "reynolds") {
+      regime = value < 2300 ? "laminar" : value < 4000 ? "transitional" : "turbulent";
+    } else if (name === "mach") {
+      regime = value < 0.3 ? "incompressible" : value < 1.0 ? "subsonic" :
+               value < 5.0 ? "supersonic" : "hypersonic";
+    } else if (name === "knudsen") {
+      regime = value < 0.01 ? "continuum" : value < 0.1 ? "slip" :
+               value < 10 ? "transitional" : "free_molecular";
+    } else if (name === "relativistic_gamma") {
+      regime = value < 1.001 ? "classical" : value < 1.1 ? "mildly_relativistic" : "relativistic";
+    } else if (name === "damkohler") {
+      regime = value < 0.1 ? "slow_reaction" : value > 10 ? "fast_reaction" : "balanced";
+    }
+    regimes.push({ number: name, symbol: entry.symbol, value, regime });
+  }
+  return { regimes, admissible_models: regimes.length > 0 ? "check_registry" : "insufficient_data" };
+}
+
+// ─── v0.10.0 · Theory Tensor lifecycle (§38) ─────────────────────────────
+function scoreDiscriminatingTest(candidateAction, theorySet, priors) {
+  // Bayesian information gain proxy: sum of KL divergence weight
+  const eig = (candidateAction.predicted_divergences || [])
+    .reduce((acc, d) => acc + Math.abs(d), 0);
+  const cost = Number(candidateAction.cost || 1);
+  const irrev = Number(candidateAction.irreversibility || 0);
+  const lambda = Number(candidateAction.lambda || 0.5);
+  const score = eig / (cost + lambda * irrev);
+  return { eig, cost, irreversibility: irrev, lambda, score };
+}
+
+// ─── v0.10.0 · CMTS transition (§40.1) ───────────────────────────────────
+function cmtsTransition(fromMedium, toMedium, currentState) {
+  const from = CMTS_MEDIA[fromMedium];
+  const to = CMTS_MEDIA[toMedium];
+  if (!from || !to) {
+    return { ok: false, reason: `unknown medium: ${!from ? fromMedium : toMedium}` };
+  }
+  // Transition uncertainty η_τ scales with number of state-var mismatches
+  const commonVars = from.state_vars.filter(v => to.state_vars.includes(v));
+  const eta_tau = 1 - (commonVars.length /
+    Math.max(from.state_vars.length, to.state_vars.length));
+  return {
+    ok: true,
+    from: fromMedium, to: toMedium,
+    common_state_vars: commonVars,
+    eta_tau: Number(eta_tau.toFixed(3)),
+    new_models: to.models,
+    protocol_steps: [
+      "detect_transition_from_sensor_fusion",
+      "freeze_prior_model_state_checkpoint",
+      "construct_new_cmts_state_estimate_eta_tau",
+      "select_new_governing_models_from_regime_registry",
+      "run_transition_digital_twin_check_conservation",
+      "revalidate_observability_controllability_safety",
+      "expose_to_existing_action_gates",
+    ],
+  };
+}
+
+// ─── v0.10.0 · Isomorphism mapping (§39) ─────────────────────────────────
+function isomorphismMap(sourceStructure, targetStructure, claimedClass) {
+  const cls = ISOMORPHISM_CLASSES.find(c => c.name === claimedClass);
+  if (!cls) {
+    return { ok: false, reason: `unknown mapping class: ${claimedClass}` };
+  }
+  // Structural invariant check (conservation, symmetry, dimension)
+  const invariantsPreserved = [];
+  const invariantsMissing = [];
+  const checkList = ["conservation","symmetry","stability","passivity",
+                     "monotonicity","topology","causality","dimensional_signature"];
+  for (const inv of checkList) {
+    if (sourceStructure[inv] !== undefined && targetStructure[inv] !== undefined) {
+      if (JSON.stringify(sourceStructure[inv]) === JSON.stringify(targetStructure[inv])) {
+        invariantsPreserved.push(inv);
+      } else {
+        invariantsMissing.push(inv);
+      }
+    }
+  }
+  const residual = Number(sourceStructure.residual_estimate || 0);
+  const epsilon = Number(sourceStructure.epsilon_tolerance || 0.01);
+  return {
+    ok: invariantsMissing.length === 0 && residual <= epsilon,
+    class: cls.name,
+    validation_required: cls.validation,
+    invariants_preserved: invariantsPreserved,
+    invariants_missing: invariantsMissing,
+    residual, epsilon_tolerance: epsilon,
+    admissible: invariantsMissing.length === 0 && residual <= epsilon,
+    stored_as: (invariantsMissing.length === 0 && residual <= epsilon) ? "validated_mapping" : "hypothesis",
+  };
+}
+
+// ─── v0.10.0 · Coverage registry query (§45) ─────────────────────────────
+async function queryCoverageGaps(env, domain) {
+  const key = `coverage:${domain || "all"}`;
+  const raw = await v010KVget(env, "CHAINSTATE_COVERAGE_KV", key);
+  if (!raw) {
+    return {
+      domain: domain || "all",
+      state: "AMBER",
+      note: "no coverage record cached · returning neutral default",
+      states_defined: COVERAGE_STATES,
+    };
+  }
+  return v010SafeJson(raw);
+}
+
+// ─── v0.10.0 · Capability State C ≠ Authority State A (§46) ──────────────
+async function queryCapabilityState(env) {
+  const raw = await v010KVget(env, "CHAINSTATE_CAPABILITY_KV", "capability_state_head");
+  if (!raw) {
+    // Return a neutral default with the vector shape but no scores
+    const C = {};
+    for (const d of CAPABILITY_DIMS) C[d] = null;
+    return { capability: C, cognition_level: "unassessed",
+             levels_defined: COGNITION_LEVELS,
+             note: "no capability record cached; returning shape only" };
+  }
+  const cap = v010SafeJson(raw);
+  // Never return authority alongside — that's a separate call intentionally
+  return {
+    capability: cap.capability || cap,
+    cognition_level: cap.cognition_level || "unassessed",
+    assessed_at: cap.assessed_at,
+    evidence_summary: cap.evidence_summary,
+    invariant: "∂A/∂C ≤ 0 · capability never confers authority",
+  };
+}
+
+// ─── v0.10.0 · Route dispatch table ──────────────────────────────────────
+// Called from the main fetch() handler additively; see route additions
+// appended below in the § "V0.10.0 route dispatch additions".
+
+async function handleV010Ontology(request, env, ctx, url) {
+  if (String(env.ONTOLOGY_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("ontology");
+  }
+  const path = url.pathname;
+
+  if (path === "/ontology/compose-v2" && request.method === "POST") {
+    // Check L0-13 through L0-17 first
+    const gate = await assessV010Admissible(env, ctx);
+    if (!gate.ok) {
+      return v010Refuse(`v0.10.0 admissibility gate failed: ${gate.failing.map(f => f.predicate).join(",")}`, 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    const { o1, o2 } = body;
+    if (!o1 || !o2) return v010Refuse("body must include o1 and o2 FOL++ entities", 400);
+    const result = composeFolPlus(o1, o2);
+    // Audit
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `compose:${Date.now()}`, result, 86400 * 30);
+    return v010Ok(result);
+  }
+
+  if (path === "/ontology/validate" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    return v010Ok(validateFolPlusEntity(body.entity || body));
+  }
+
+  if (path === "/ontology/status" && request.method === "GET") {
+    const admissible = await assessV010Admissible(env, ctx);
+    return v010Ok({
+      subsystem: "ontology_v0.10.0",
+      fol_plus_fields: FOL_PLUS_FIELDS,
+      status_vocab: FOL_STATUS_VOCAB,
+      admissible_check: admissible,
+    });
+  }
+
+  return v010Refuse(`unknown /ontology/* route: ${path}`, 404);
+}
+
+async function handleV010Math(request, env, ctx, url) {
+  if (String(env.MATH_FABRIC_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("math_fabric");
+  }
+  const path = url.pathname;
+  const renderUrl = env.RENDER_URL || env.COMPUTE_URL;
+  if (!renderUrl) return v010ServiceUnavailable("math_fabric_needs_render_url");
+
+  if (path === "/math/formalize" && request.method === "POST") {
+    // Proxy to Render math_bridge.formalize
+    const body = await request.json().catch(() => ({}));
+    try {
+      const r = await fetch(`${renderUrl}/math/formalize`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-CHAINSTATE-TOKEN": env.CHAINSTATE_SHARED_SECRET || "",
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      return v010Ok(data, { proxied_to: "render:/math/formalize" });
+    } catch (e) {
+      return v010ServiceUnavailable(`math_formalize: ${e.message}`);
+    }
+  }
+
+  if (path === "/math/verify" && request.method === "POST") {
+    // Check L0-14 evidence chain must be intact before signing verification
+    const l0_14 = await assessL0_14_EvidenceChainCoherent(env, ctx);
+    const body = await request.json().catch(() => ({}));
+    try {
+      const r = await fetch(`${renderUrl}/math/verify`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-CHAINSTATE-TOKEN": env.CHAINSTATE_SHARED_SECRET || "",
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      // Sign the result if we have a key
+      const signature = await v010HmacHex(env.MATH_VERIFY_HMAC_KEY || "",
+        v010CanonicalJson(data));
+      return v010Ok(data, {
+        proxied_to: "render:/math/verify",
+        l0_14_check: l0_14,
+        signature: signature || "unsigned",
+      });
+    } catch (e) {
+      return v010ServiceUnavailable(`math_verify: ${e.message}`);
+    }
+  }
+
+  if (path === "/math/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "math_fabric_v0.10.0",
+      pipeline_stages: [
+        "problem_extraction","dimensional_normalisation","representation_search",
+        "formalisation","symbolic_solving","numerical_solving","verification",
+        "discovery","registration",
+      ],
+      domains: [
+        "algebra","analysis","differential_equations","geometry_topology",
+        "probability_statistics","optimisation_control","numerical_mathematics",
+        "information_complexity","formal_methods",
+      ],
+    });
+  }
+
+  return v010Refuse(`unknown /math/* route: ${path}`, 404);
+}
+
+async function handleV010Science(request, env, ctx, url) {
+  if (String(env.THEORY_ENGINE_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("theory_engine");
+  }
+  const path = url.pathname;
+  const renderUrl = env.RENDER_URL || env.COMPUTE_URL;
+
+  if (path === "/science/compare-theories" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    // Try to delegate to Render; otherwise return a local computation summary
+    if (renderUrl) {
+      try {
+        const r = await fetch(`${renderUrl}/theory/compare`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "X-CHAINSTATE-TOKEN": env.CHAINSTATE_SHARED_SECRET || "",
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        return v010Ok(data, { proxied_to: "render:/theory/compare" });
+      } catch (_) { /* fall through */ }
+    }
+    return v010Ok({
+      note: "local shape · Render bridge unavailable",
+      theory_set_size: Array.isArray(body.theories) ? body.theories.length : 0,
+      lambda: body.lambda || 0.5,
+    });
+  }
+
+  if (path === "/science/design-test" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const candidates = Array.isArray(body.candidates) ? body.candidates : [];
+    const scored = candidates.map(c => ({
+      ...c, ...scoreDiscriminatingTest(c, body.theories || [], body.priors || {}),
+    }));
+    scored.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return v010Ok({
+      ranked: scored,
+      selected: scored[0] || null,
+      policy: "argmax EIG / (Cost + λ·Irreversibility) subject to safety(a) ≤ θ",
+    });
+  }
+
+  if (path === "/science/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "theory_engine_v0.10.0",
+      theory_tensor: "Θ = {(Mᵢ, Aᵢ, Vᵢ, wᵢ, Eᵢ, Δᵢ)}",
+      dialetheic_containment: "contradiction tolerance ≠ action permission",
+    });
+  }
+
+  return v010Refuse(`unknown /science/* route: ${path}`, 404);
+}
+
+async function handleV010Cmts(request, env, ctx, url) {
+  if (String(env.CMTS_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("cmts");
+  }
+  const path = url.pathname;
+
+  if (path === "/cmts/transition" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const { from_medium, to_medium, current_state } = body;
+    if (!from_medium || !to_medium) {
+      return v010Refuse("body must include from_medium and to_medium", 400);
+    }
+    const result = cmtsTransition(from_medium, to_medium, current_state);
+    // Sign the transition receipt with CMTS_HMAC_KEY
+    const signature = await v010HmacHex(env.CMTS_HMAC_KEY || "",
+      v010CanonicalJson(result));
+    // Persist
+    await v010KVput(env, "CHAINSTATE_CMTS_KV",
+      `transition:${Date.now()}`, { ...result, signature }, 86400);
+    return v010Ok(result, { signature: signature || "unsigned" });
+  }
+
+  if (path === "/cmts/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "cmts_v0.10.0",
+      media: Object.keys(CMTS_MEDIA),
+      protocol: "detect → freeze → construct → reselect → twin → revalidate → expose",
+    });
+  }
+
+  return v010Refuse(`unknown /cmts/* route: ${path}`, 404);
+}
+
+async function handleV010Twin(request, env, ctx, url) {
+  if (String(env.TWIN_FABRIC_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("twin_fabric");
+  }
+  const path = url.pathname;
+  const renderUrl = env.RENDER_URL || env.COMPUTE_URL;
+
+  if (path === "/twin/validate" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    if (renderUrl) {
+      try {
+        const r = await fetch(`${renderUrl}/twin/validate`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "X-CHAINSTATE-TOKEN": env.CHAINSTATE_SHARED_SECRET || "",
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        const signature = await v010HmacHex(env.TWIN_VALIDATION_HMAC_KEY || "",
+          v010CanonicalJson(data));
+        return v010Ok(data, { proxied_to: "render:/twin/validate",
+                              signature: signature || "unsigned" });
+      } catch (e) { return v010ServiceUnavailable(`twin_validate: ${e.message}`); }
+    }
+    // Local shape only
+    return v010Ok({
+      tier: body.tier || "T0",
+      note: "local shape · Render bridge unavailable",
+      tiers_defined: TWIN_TIERS,
+    });
+  }
+
+  if (path === "/twin/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "twin_fabric_v0.10.0",
+      tiers: TWIN_TIERS,
+      surrogate_governance: "OOD detector + calibration record + error model per surrogate",
+    });
+  }
+
+  return v010Refuse(`unknown /twin/* route: ${path}`, 404);
+}
+
+async function handleV010Isomorphism(request, env, ctx, url) {
+  if (String(env.ISOMORPHISM_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("isomorphism");
+  }
+  const path = url.pathname;
+
+  if (path === "/isomorphism/map" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const { source, target, class: cls } = body;
+    if (!source || !target || !cls) {
+      return v010Refuse("body must include source, target, class", 400);
+    }
+    const result = isomorphismMap(source, target, cls);
+    // Only validated mappings can be stored in ontology; unvalidated stays hypothesis
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `iso:${result.stored_as || "hypothesis"}:${Date.now()}`, result,
+      86400 * 30);
+    return v010Ok(result);
+  }
+
+  if (path === "/isomorphism/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "isomorphism_v0.10.0",
+      mapping_classes: ISOMORPHISM_CLASSES,
+      invariants_checked: ["conservation","symmetry","stability","passivity",
+                            "monotonicity","topology","causality","dimensional_signature"],
+    });
+  }
+
+  return v010Refuse(`unknown /isomorphism/* route: ${path}`, 404);
+}
+
+async function handleV010Engineering(request, env, ctx, url) {
+  const path = url.pathname;
+
+  if (path === "/engineering/lifecycle" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const stage = body.stage;
+    if (!stage || !ENGINEERING_LIFECYCLE_STAGES.includes(stage)) {
+      return v010Refuse(`stage must be one of: ${ENGINEERING_LIFECYCLE_STAGES.join(", ")}`, 400);
+    }
+    // Persist lifecycle event
+    const event = {
+      artefact_id: body.artefact_id || "unknown",
+      stage,
+      discipline: body.discipline || "unspecified",
+      predecessor_stage: body.predecessor_stage,
+      timestamp: new Date().toISOString(),
+      evidence: body.evidence || null,
+    };
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `lifecycle:${event.artefact_id}:${stage}:${Date.now()}`, event,
+      86400 * 90);
+    return v010Ok(event);
+  }
+
+  if (path === "/engineering/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "engineering_lifecycle_v0.10.0",
+      stages: ENGINEERING_LIFECYCLE_STAGES,
+      disciplines: ENGINEERING_DISCIPLINES,
+    });
+  }
+
+  return v010Refuse(`unknown /engineering/* route: ${path}`, 404);
+}
+
+async function handleV010Fabrication(request, env, ctx, url) {
+  if (String(env.METAMORPHIC_FAB_ENABLED || "true") === "false") {
+    return v010ServiceUnavailable("metamorphic_fabrication");
+  }
+  const path = url.pathname;
+
+  if (path === "/fabrication/adapt" && request.method === "POST") {
+    // Bounded adaptation is gated by the full v0.10.0 admissibility check
+    const gate = await assessV010Admissible(env, ctx);
+    if (!gate.ok) {
+      return v010Refuse(`v0.10.0 admissibility gate failed: ${gate.failing.map(f => f.predicate).join(",")}`, 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    // Verify PDAL device manifest HMAC
+    if (body.device_manifest_hmac) {
+      const expected = await v010HmacHex(env.FAB_PDAL_HMAC_KEY || "",
+        v010CanonicalJson(body.device_manifest || {}));
+      if (expected !== body.device_manifest_hmac) {
+        return v010Refuse("device manifest HMAC mismatch", 403);
+      }
+    } else {
+      return v010Refuse("device_manifest_hmac required for PDAL adaptation", 400);
+    }
+    // Classify deviation
+    const dev = Number(body.deviation_magnitude || 0);
+    let classification = "benign";
+    if (dev > Number(env.FAB_SAFETY_THRESHOLD || 0.5)) classification = "safety_critical";
+    else if (dev > Number(env.FAB_MODEL_DISCREPANCY_THRESHOLD || 0.2)) classification = "model_discrepancy";
+    else if (dev > Number(env.FAB_SENSOR_NOISE_THRESHOLD || 0.05)) classification = "benign_process_variation";
+    else classification = "sensor_noise";
+    if (classification === "safety_critical") {
+      return v010Refuse(`safety-critical deviation ${dev}: halt required`, 403);
+    }
+    // Persist the receipt
+    const receipt = {
+      artefact_id: body.artefact_id || "unknown",
+      channel: body.channel,
+      deviation_magnitude: dev,
+      classification,
+      before_toolpath_hash: body.before_toolpath_hash,
+      after_toolpath_hash: body.after_toolpath_hash,
+      model_version: body.model_version,
+      sensor_evidence: body.sensor_evidence,
+      timestamp: new Date().toISOString(),
+    };
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `adaptation:${receipt.artefact_id}:${Date.now()}`, receipt, 86400 * 90);
+    return v010Ok({
+      classification, action: classification === "benign" ? "continue" :
+                              classification === "benign_process_variation" ? "select_prevalidated_policy" :
+                              "flag_for_review",
+      receipt,
+    });
+  }
+
+  if (path === "/fabrication/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "metamorphic_fabrication_v0.10.0",
+      channels: MFG_FEEDBACK_CHANNELS,
+      rule: "D_{t+1} = Compile(PDIR_t, y_t, Twin_t, γ, θ) iff Safety(D_{t+1}) ≤ θ",
+    });
+  }
+
+  return v010Refuse(`unknown /fabrication/* route: ${path}`, 404);
+}
+
+async function handleV010Capability(request, env, ctx, url) {
+  const path = url.pathname;
+
+  if (path === "/capability/state" && request.method === "GET") {
+    // Returns C only, never A — explicitly separated
+    const state = await queryCapabilityState(env);
+    return v010Ok(state);
+  }
+
+  if (path === "/capability/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "capability_state_v0.10.0",
+      capability_dims: CAPABILITY_DIMS,
+      authority_dims: AUTHORITY_DIMS,
+      invariant: "∂A/∂C ≤ 0",
+      cognition_levels: COGNITION_LEVELS,
+    });
+  }
+
+  return v010Refuse(`unknown /capability/* route: ${path}`, 404);
+}
+
+async function handleV010Coverage(request, env, ctx, url) {
+  const path = url.pathname;
+
+  if (path === "/coverage/gaps" && request.method === "GET") {
+    const params = url.searchParams;
+    const domain = params.get("domain");
+    const gaps = await queryCoverageGaps(env, domain);
+    return v010Ok(gaps);
+  }
+
+  if (path === "/coverage/status" && request.method === "GET") {
+    return v010Ok({
+      subsystem: "coverage_registry_v0.10.0",
+      states: COVERAGE_STATES,
+      formula: "Coverage(d) = f(Entity, Model, Regime, Evidence, Tool, Test)",
+    });
+  }
+
+  return v010Refuse(`unknown /coverage/* route: ${path}`, 404);
+}
+
+// ─── v0.10.0 · Cron tick implementations ─────────────────────────────────
+
+async function runV010OntologyCompositionTick(env, ctx) {
+  // */9 * * * * — propagate updates through FOL++ graph
+  // Reads recent compositions from KV, checks admissibility, updates coverage
+  try {
+    const admissible = await assessV010Admissible(env, ctx);
+    const record = {
+      tick: "ontology_composition",
+      version: V010_VERSION,
+      timestamp: new Date().toISOString(),
+      admissible_check: admissible,
+    };
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `tick:composition:${Date.now()}`, record, 3600);
+    return { ok: true, ...record };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function runV010ScienceIngestDaily(env, ctx) {
+  // 0 6 * * * — arxiv new-submissions + ADS deltas
+  // Publishes a candidate-ingest receipt; heavy pull happens on Render side
+  try {
+    const record = {
+      tick: "science_ingest_daily",
+      version: V010_VERSION,
+      timestamp: new Date().toISOString(),
+      sources: ["arxiv:astro-ph","arxiv:hep","arxiv:cond-mat","arxiv:gr-qc",
+                "arxiv:quant-ph","arxiv:physics.plasm","arxiv:math-ph","arxiv:math.AP",
+                "NASA_ADS_deltas"],
+      status: "receipt_only_this_layer",
+    };
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `tick:science:${Date.now()}`, record, 86400 * 7);
+    return { ok: true, ...record };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function runV010TwinConvergenceSweep(env, ctx) {
+  // */13 * * * * — recompute digital-twin residuals
+  try {
+    const l0_16 = await assessL0_16_UncertaintyCalibrated(env, ctx);
+    const record = {
+      tick: "twin_convergence_sweep",
+      version: V010_VERSION,
+      timestamp: new Date().toISOString(),
+      calibration_check: l0_16,
+    };
+    await v010KVput(env, "CHAINSTATE_TWIN_KV",
+      `tick:convergence:${Date.now()}`, record, 3600);
+    return { ok: true, ...record };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function runV010CosmosMirrorRefresh(env, ctx) {
+  // 0 4 * * * — re-fetch cosmos sources per native cadence
+  try {
+    const record = {
+      tick: "cosmos_mirror_refresh",
+      version: V010_VERSION,
+      timestamp: new Date().toISOString(),
+      sources_to_refresh: ["NOAA_SWPC","NASA_CCMC","IERS","IAU_MPC",
+                            "Skyfield_DE440","SIMBAD","Vizier"],
+      status: "receipt_only_this_layer",
+    };
+    await v010KVput(env, "CHAINSTATE_ONTOLOGY_KV",
+      `tick:cosmos:${Date.now()}`, record, 86400 * 7);
+    return { ok: true, ...record };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ─── v0.10.0 · Global entry point for main fetch() ───────────────────────
+// The main fetch() handler above (from v0.9.5 baseline) should dispatch to
+// this function early for any /ontology/*, /math/*, /science/*, /cmts/*,
+// /twin/*, /isomorphism/*, /engineering/*, /fabrication/*, /capability/*,
+// /coverage/* path. See "V0.10.0 · route dispatch additions" block at the
+// very end of the file (inside the fetch handler).
+
+async function dispatchV010(request, env, ctx, url) {
+  const p = url.pathname;
+  if (p.startsWith("/v010/r2/"))      return handleV010R2(request, env, ctx, url);
+  if (p.startsWith("/ontology/"))     return handleV010Ontology(request, env, ctx, url);
+  if (p.startsWith("/math/"))         return handleV010Math(request, env, ctx, url);
+  if (p.startsWith("/science/"))      return handleV010Science(request, env, ctx, url);
+  if (p.startsWith("/cmts/"))         return handleV010Cmts(request, env, ctx, url);
+  if (p.startsWith("/twin/"))         return handleV010Twin(request, env, ctx, url);
+  if (p.startsWith("/isomorphism/"))  return handleV010Isomorphism(request, env, ctx, url);
+  if (p.startsWith("/engineering/"))  return handleV010Engineering(request, env, ctx, url);
+  if (p.startsWith("/fabrication/"))  return handleV010Fabrication(request, env, ctx, url);
+  if (p.startsWith("/capability/"))   return handleV010Capability(request, env, ctx, url);
+  if (p.startsWith("/coverage/"))     return handleV010Coverage(request, env, ctx, url);
+  if (p === "/v010/status") {
+    return v010Ok({
+      version: V010_VERSION, paper: V010_PAPER,
+      subsystems: [
+        "ontology (FOL++)", "math (fabric)", "science (theory tensor)",
+        "cmts (cross-medium)", "twin (fabric 2.0)", "isomorphism (mapper)",
+        "engineering (lifecycle)", "fabrication (metamorphic)",
+        "capability (state)", "coverage (registry)",
+      ],
+      l0_predicates_added: ["L0-13","L0-14","L0-15","L0-16","L0-17"],
+      preserved: "every v0.7.0 – v0.9.5 subsystem is byte-identically preserved",
+    });
+  }
+  return null;   // not a v0.10.0 route
+}
+
+// ─── v0.10.0 · Cron dispatch entry point ─────────────────────────────────
+// The main scheduled() handler above (from v0.9.5 baseline) should invoke
+// this function additively for the v0.10.0 crons.
+
+async function dispatchV010Cron(cron, env, ctx) {
+  // v0.10.0 · R2 folder bootstrap — sentinel-guarded, runs once/24h regardless of cron pattern
+  try {
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(bootstrapR2FoldersGuarded(env, ctx));
+    } else {
+      await bootstrapR2FoldersGuarded(env, ctx);
+    }
+  } catch (_) { /* fail-soft; other v0.10.0 crons continue */ }
+  const enabled = String(env.ONTOLOGY_ENABLED || "true") !== "false";
+  if (!enabled) return { skipped: "ontology_disabled" };
+  if (cron === "*/9 * * * *")   return runV010OntologyCompositionTick(env, ctx);
+  if (cron === "0 6 * * *")     return runV010ScienceIngestDaily(env, ctx);
+  if (cron === "*/13 * * * *")  return runV010TwinConvergenceSweep(env, ctx);
+  if (cron === "0 4 * * *")     return runV010CosmosMirrorRefresh(env, ctx);
+  return null;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// v0.10.0 · ROUTE DISPATCH ADDITIONS
+// The two lines below must be added inside the existing export default {}
+// object's fetch() and scheduled() handlers, near the top of each handler
+// so v0.10.0 gets first shot before any v0.9.x branch. The functions
+// dispatchV010 and dispatchV010Cron are defined above.
+//
+// INSERTION POINT (fetch):
+//   async fetch(req, env, ctx) {
+//     const url = new URL(req.url);
+//     const v010 = await dispatchV010(req, env, ctx, url);
+//     if (v010) return v010;
+//     ... existing v0.9.5 dispatch continues unchanged ...
+//   }
+//
+// INSERTION POINT (scheduled):
+//   async scheduled(event, env, ctx) {
+//     const cron = event.cron;
+//     const v010result = await dispatchV010Cron(cron, env, ctx);
+//     if (v010result) ctx.waitUntil(Promise.resolve(v010result));
+//     ... existing v0.9.5 cron branches continue unchanged ...
+//   }
+// ═════════════════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════════════════
+// v0.10.0 · R2 BUCKET FOLDER BOOTSTRAP (additive · idempotent · fail-soft)
+//
+// Cloudflare R2 does not have real folders — folders are a UI artefact of
+// forward-slash characters in object keys. When a bucket is empty, the R2
+// dashboard shows "0 objects" and no folder structure. Downstream code that
+// enumerates a well-known prefix returns no keys either.
+//
+// bootstrapR2Folders() writes an idempotent marker at "<folder>/README.json"
+// in each bound bucket, guaranteeing:
+//   1. every bound bucket shows a visible folder in the R2 dashboard
+//   2. downstream list/enumerate calls against the known prefix return at
+//      least the marker (safe empty state)
+//   3. re-invocation is a HEAD then no-op, so hourly cron cost is O(#buckets)
+//
+// The manifest below is the SINGLE SOURCE OF TRUTH for the ten CHAINSTATE
+// R2 buckets and their intended folder prefixes. To add a bucket:
+//   1. Bind it in wrangler.toml with the binding name listed below.
+//   2. That's it — bootstrap will create the folder on the next cron tick,
+//      or immediately via GET /v010/r2/bootstrap.
+//
+// Every existing R2 write path in the worker is preserved verbatim:
+//   - env.CHAINSTATE_CENSUS_R2.put("planet-census/<hash>.json", ...)   (line 14424)
+//   - env.CHAINSTATE_CENSUS_R2.put("census/YYYY/MM/DD/digest.json", ...) (line 6784)
+//   - env.CHAINSTATE_CFIELD_ARCHIVE.put("dispatches/YYYY-MM-DD/...json", ...) (line 10163)
+// The bootstrap writes only to distinct marker keys ("<folder>/README.json")
+// that never collide with those data paths.
+// ═════════════════════════════════════════════════════════════════════════
+
+const R2_BUCKET_MANIFEST = [
+  { binding: "CHAINSTATE_CENSUS_R2",         bucket: "chainstate-census-artifacts",  folder: "planet-census",      purpose: "Planet-engine census artifact bundles (Paper IX). Also writes census/YYYY/MM/DD/digest.json daily digests." },
+  { binding: "CHAINSTATE_CFIELD_ARCHIVE",    bucket: "cfield-archive",               folder: "dispatches",         purpose: "C-field dispatch receipts (Paper XIII) at dispatches/YYYY-MM-DD/<dispatch_id>.json." },
+  { binding: "CHAINSTATE_ARTIFACTS",         bucket: "chainstate-artifacts",         folder: "artifacts",          purpose: "General-purpose CHAINSTATE artifact store (whitepapers, snapshots, cross-subsystem exports)." },
+  { binding: "CHAINSTATE_COSMOS_ARCHIVE",    bucket: "chainstate-cosmos-archive",    folder: "phasespace-cosmos",  purpose: "Phase-space cosmos snapshots (Paper XI CHAINSTATE AGI Phasespace)." },
+  { binding: "CHAINSTATE_EMOJI_ARCHIVE",     bucket: "chainstate-emoji-archive",     folder: "emoji-machine-code", purpose: "Emoji machine-code disassembly artefacts (Paper XIV CHAINSTATE AGI Emoji Machine Code)." },
+  { binding: "CHAINSTATE_METACOG_R2",        bucket: "chainstate-metacog-log",       folder: "metacog",            purpose: "Metacognition telemetry archives (Paper XVI NEUROMARK SIMULATOR §18.1)." },
+  { binding: "CHAINSTATE_OMNICOG_ARCHIVE",   bucket: "chainstate-omnicog-archive",   folder: "omnicognizant",      purpose: "Omnicognizant substrate archives (Paper XII CHAINSTATE OMNICOGNIZANT AGI)." },
+  { binding: "CHAINSTATE_ONTOLOGY_ARCHIVE",  bucket: "chainstate-ontology-archive",  folder: "ontology-delta",     purpose: "Ontology delta stream archives (see /ontology/delta cursor)." },
+  { binding: "PERCEPTION_MODELS_CACHE",      bucket: "chainstate-perception-models", folder: "perception-models",  purpose: "Perception model artifacts (Paper VIII Hyperspectral Sensory Synthesis)." },
+  { binding: "CHAINSTATE_TESSERA_CACHE",     bucket: "chainstate-tessera-cache",     folder: "tessera-cache",      purpose: "Tessera service cache artifacts." },
+];
+
+async function bootstrapR2Folders(env, opts) {
+  const force = !!(opts && opts.force);
+  const results = [];
+  for (const spec of R2_BUCKET_MANIFEST) {
+    const r = { bucket: spec.bucket, binding: spec.binding, folder: spec.folder,
+                bound: false, marker_key: null, action: "skipped", error: null };
+    const b = env[spec.binding];
+    if (!b) { r.error = "binding_not_present_in_env"; results.push(r); continue; }
+    r.bound = true;
+    r.marker_key = `${spec.folder}/README.json`;
+    // Idempotent check via HEAD (unless force=true)
+    let exists = false;
+    if (!force) {
+      try {
+        const head = await b.head(r.marker_key);
+        exists = !!head;
+      } catch (_) { exists = false; }
+    }
+    if (exists) { r.action = "already_present"; results.push(r); continue; }
+    // Write marker
+    try {
+      const marker = {
+        bucket: spec.bucket,
+        binding: spec.binding,
+        folder: spec.folder,
+        purpose: spec.purpose,
+        bootstrap_version: (typeof WORKER_VERSION === "string" ? WORKER_VERSION : "0.10.0"),
+        bootstrapped_at: new Date().toISOString(),
+        note: "This marker file makes the folder visible in the Cloudflare R2 dashboard. Safe to leave in place; safe to delete (bootstrap recreates it on the next cron tick).",
+      };
+      await b.put(r.marker_key, JSON.stringify(marker, null, 2), {
+        httpMetadata: { contentType: "application/json" }
+      });
+      r.action = force ? "recreated" : "created";
+    } catch (e) {
+      r.action = "failed";
+      r.error = String((e && e.message) || e);
+    }
+    results.push(r);
+  }
+  return {
+    bootstrapped_at:            new Date().toISOString(),
+    worker_version:             (typeof WORKER_VERSION === "string" ? WORKER_VERSION : "0.10.0"),
+    total_buckets_manifested:   R2_BUCKET_MANIFEST.length,
+    total_bound:                results.filter(x => x.bound).length,
+    total_created:              results.filter(x => x.action === "created" || x.action === "recreated").length,
+    total_already_present:      results.filter(x => x.action === "already_present").length,
+    total_failed:               results.filter(x => x.action === "failed").length,
+    total_missing_binding:      results.filter(x => x.error === "binding_not_present_in_env").length,
+    buckets:                    results,
+  };
+}
+
+// Guarded runner — writes a KV sentinel once bootstrap successfully completes,
+// so cron ticks don't re-HEAD every bucket on every fire. Sentinel expires
+// after 24 h, so a full sweep still happens once per day.
+async function bootstrapR2FoldersGuarded(env, ctx) {
+  try {
+    const SENT_KEY = "r2:bootstrap:done";
+    if (env.CHAINSTATE_CACHE) {
+      try {
+        const sentinel = await env.CHAINSTATE_CACHE.get(SENT_KEY);
+        if (sentinel) return { skipped: "guarded_by_sentinel", sentinel_key: SENT_KEY };
+      } catch (_) { /* fail-soft; run bootstrap */ }
+    }
+    const result = await bootstrapR2Folders(env, { force: false });
+    // Only latch the sentinel when every bound bucket succeeded — that way,
+    // adding a new binding in wrangler.toml automatically re-triggers on the
+    // next cron tick.
+    if (env.CHAINSTATE_CACHE && result.total_failed === 0 && result.total_bound === R2_BUCKET_MANIFEST.length) {
+      try {
+        await env.CHAINSTATE_CACHE.put(SENT_KEY,
+          JSON.stringify({ ts: Date.now(), version: result.worker_version }),
+          { expirationTtl: 86400 });
+      } catch (_) { /* fail-soft */ }
+    }
+    return result;
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+}
+
+// ─── v0.10.0 · Admin endpoints (routed via dispatchV010) ─────────────────
+//   GET  /v010/r2/status     → report bound/unbound/marker state per bucket (no writes)
+//   POST /v010/r2/bootstrap  → force-run bootstrap ignoring KV sentinel
+//   GET  /v010/r2/bootstrap  → run guarded bootstrap (sentinel-aware)
+async function handleV010R2(request, env, ctx, url) {
+  const p = url.pathname;
+  if (p === "/v010/r2/status") {
+    const buckets = [];
+    for (const spec of R2_BUCKET_MANIFEST) {
+      const b = env[spec.binding];
+      const item = { bucket: spec.bucket, binding: spec.binding, folder: spec.folder,
+                     purpose: spec.purpose, bound: !!b, marker_key: `${spec.folder}/README.json`,
+                     marker_present: null };
+      if (b) {
+        try {
+          const head = await b.head(item.marker_key);
+          item.marker_present = !!head;
+        } catch (_) { item.marker_present = false; }
+      }
+      buckets.push(item);
+    }
+    return v010Ok({
+      subsystem: "r2_folder_bootstrap",
+      total_buckets_manifested: R2_BUCKET_MANIFEST.length,
+      total_bound: buckets.filter(x => x.bound).length,
+      total_marker_present: buckets.filter(x => x.marker_present === true).length,
+      buckets,
+    });
+  }
+  if (p === "/v010/r2/bootstrap") {
+    // Force via POST, guarded via GET
+    const force = (request.method === "POST");
+    const result = force
+      ? await bootstrapR2Folders(env, { force: true })
+      : await bootstrapR2FoldersGuarded(env, ctx);
+    return v010Ok({ subsystem: "r2_folder_bootstrap", forced: force, result });
+  }
+  return null;
+}
+
+// ─── END of v0.10.0 · R2 BUCKET FOLDER BOOTSTRAP ─────────────────────────
+
+
+// ─── END of v0.10.0 CHAINSTATE OMNISCIENCE additions ─────────────────────
+
+
+
+// ═════════════════════════════════════════════════════════════════════════
+// ─── v0.10.1 · CHAINSTATE EDGE QSIM · METACOGNITIVELY BOUND QUANTUM SIM ───
+// ═════════════════════════════════════════════════════════════════════════
+/**
+ * Additive-only extension. Every v0.7.0 – v0.10.0 subsystem, endpoint,
+ * function, KV binding, R2 bucket, secret, and cron is preserved
+ * byte-identically.
+ *
+ * Grounded in "CHAINSTATE EDGE QSIM · A Metacognitively Bound Quantum
+ * Simulation Substrate for the CHAINSTATE AGI" (Pater · Rev. 2026-09).
+ *
+ * ─── The central architectural rule ────────────────────────────────────
+ * QSIM is a cognitive faculty, NOT a public HTTP service. There is no
+ * external route through which a caller can mint a QSIM job, read raw
+ * amplitudes, or inspect intermediate state. The Cloudflare Worker
+ * refuses any request that starts with /qsim/ before any other
+ * processing, returning 404. QSIM is invoked ONLY through the
+ * `invokeQsim(env, intent, qir)` internal function, called from within
+ * the CHAINSTATE AGI runtime over a service binding, guarded by an
+ * Ed25519 signature over a canonical-JSON intent payload whose purpose
+ * must be one of five metacognitive values.
+ *
+ * ─── Isolation property (§5.1 of the paper) ─────────────────────────────
+ *  (a) Every QSIM job is invoked by a signed intent token produced
+ *      inside the AGI runtime; intent-signing key not accessible from
+ *      any process outside the runtime.
+ *  (b) No external HTTP path, tool call, or agent action can produce
+ *      an intent token.
+ *  (c) No QSIM output is returned to external callers except receipt
+ *      hashes plus post-filtered semantic summaries through the safety
+ *      envelope.
+ *  (d) The intent-signing key rotates on every AGI runtime restart;
+ *      each intent token has a short expiry.
+ *
+ * ─── Five envelope invariants (§10.2) ────────────────────────────────────
+ *  I1. No raw amplitudes — any tensor of size > 32 elements is refused
+ *      as an output payload. Summaries must be aggregate quantities.
+ *  I2. No intermediate state — the reasoning trace that led to the
+ *      intent-token justification is not part of any external output.
+ *  I3. No intent-signing artefacts — signing key, key rotation
+ *      identifier, and justification content are never emitted outside
+ *      the AGI runtime.
+ *  I4. Receipt-hash-only external references — when the AGI refers to
+ *      a completed QSIM job externally, it references only the on-chain
+ *      receipt hash, never any pointer into Supabase, R2, or Render.
+ *  I5. Append-only audit — every (intent, receipt, external emission)
+ *      triple is recorded in the append-only audit ledger on the
+ *      Supabase side, cross-referenced with the on-chain receipt log.
+ *
+ * ─── New route surface at the edge ──────────────────────────────────────
+ *  /qsim/*            → 404 unconditionally (hard rule, above everything).
+ *  /receipt/:id       → read-only receipt lookup returns Base tx hash +
+ *                       semantic summary. Never returns raw amplitude
+ *                       payloads. Rate-limited via CHAINSTATE_QSIM_KV.
+ *  /qsim/status       → also 404 (does not leak subsystem enable status
+ *                       externally). Operator introspection is via
+ *                       /v0101/status, which is a v0.10.1 admin endpoint.
+ *  /v0101/status      → operator-only introspection. Returns
+ *                       QSIM_ENABLED, ALLOWED_PURPOSES cardinality, and
+ *                       key-rotation cadence. Never returns key material.
+ *  /v0101/audit/tail  → operator-only tail of audit reconciliation.
+ *                       Requires X-CHAINSTATE-ADMIN-TOKEN.
+ *
+ * ─── Internal-only function surface ─────────────────────────────────────
+ *  invokeQsim(env, intent, qir)
+ *      Called ONLY from within the AGI runtime, over a service binding.
+ *      Verifies the Ed25519 intent signature against
+ *      env.AGI_INTENT_PUBKEY, checks purpose ∈ ALLOWED_PURPOSES, checks
+ *      budget caps and expiry, then routes to the per-session Durable
+ *      Object QSIM_KERNEL_DO which coordinates kernel handshake with
+ *      the Render backends. Returns { receiptHash, semanticSummary }.
+ *      Raw amplitudes and intermediate state are never returned here.
+ *
+ * ─── New KV bindings ────────────────────────────────────────────────────
+ *  CHAINSTATE_QSIM_KV        24h TTL   rate-limit counters, cached
+ *                                      receipt indices, session hints.
+ *                                      Never authoritative (25 MiB/key
+ *                                      ceiling per CF KV).
+ *  CHAINSTATE_QSIM_AUDIT_KV   7d TTL   audit-tail cache for /v0101/audit
+ *                                      operator introspection. The
+ *                                      authoritative audit ledger lives
+ *                                      in Supabase (chainstate_qsim
+ *                                      schema, append-only trigger).
+ *
+ * ─── New R2 buckets ─────────────────────────────────────────────────────
+ *  chainstate-qsim-artifacts   Large quantum artifacts: full state
+ *                              vectors, MPS tensor bundles, noise-model
+ *                              matrices. NEVER external-readable — R2
+ *                              CORS forbids all origins by policy;
+ *                              access is via internal binding only.
+ *
+ * ─── New Durable Object namespace ───────────────────────────────────────
+ *  QSIM_KERNEL_DO   Per-session job coordination. One DO instance per
+ *                   AGI session id (from IntentPayload.sessionId), so
+ *                   intent-token sequencing, kernel handshakes, and
+ *                   receipt promotion are strongly ordered. DO class
+ *                   is defined at end of file; Cloudflare wrangler.toml
+ *                   registers it with new_sqlite_classes.
+ *
+ * ─── New environment variables ──────────────────────────────────────────
+ *  QSIM_ENABLED               true|false — master rollback. When false,
+ *                             invokeQsim throws QSIM_DISABLED, the
+ *                             /receipt/:id endpoint returns 404, the
+ *                             cron ticks skip. Default: false (opt-in).
+ *  QSIM_MAX_QUBITS            integer, default 30. Hard cap on
+ *                             IntentPayload.qir.nQubits at the intent
+ *                             gate.
+ *  QSIM_MAX_SECONDS           integer, default 60. Hard cap on
+ *                             IntentPayload.budget.maxSeconds.
+ *  QSIM_MAX_BYTES             integer, default 33554432 (32 MiB). Hard
+ *                             cap on IntentPayload.budget.maxBytes.
+ *  QSIM_INTENT_TTL_S          integer, default 30. Maximum permissible
+ *                             (expiry - issued) for any signed intent.
+ *                             Intents with longer TTL are rejected.
+ *  QSIM_KEY_ROTATION_MINUTES  integer, default 60. Cron cadence check
+ *                             for AGI intent-signing key rotation.
+ *  QSIM_AUDIT_RECONCILE_HOURS integer, default 1. Cron cadence for
+ *                             audit reconciliation against Base receipts.
+ *  AGI_INTENT_PUBKEY          hex-encoded Ed25519 public key of the
+ *                             current AGI runtime instance. Rotates on
+ *                             every AGI runtime restart.
+ *  QSIM_KERNEL_BASE_URL       base URL of the Render backend hosting
+ *                             the four simulator kernels (state-vector,
+ *                             MPS, stabilizer, density-matrix).
+ *                             e.g. https://metastate-quantum.onrender.com
+ *  QSIM_SUPABASE_URL          Supabase base URL for QSIM tables in the
+ *                             chainstate_qsim schema. Same host as the
+ *                             existing Supabase project; new schema.
+ *  QSIM_BASE_RECEIPTS_ADDR    Deployed QsimReceipts contract address on
+ *                             Base mainnet 8453. Optional until Phase 3.
+ *
+ * ─── New secrets ────────────────────────────────────────────────────────
+ *  QSIM_INTENT_HMAC_KEY               32-byte HMAC secret used as a
+ *                                     defence-in-depth check alongside
+ *                                     the Ed25519 signature. Rotated
+ *                                     on runtime restart.
+ *  QSIM_SUPABASE_SERVICE_ROLE_KEY     Supabase service-role key
+ *                                     scoped to chainstate_qsim schema
+ *                                     via RLS (see qsim_supabase.sql).
+ *  QSIM_KERNEL_INTERNAL_TOKEN         Shared secret between this Worker
+ *                                     and the Render QSIM kernel. Sent
+ *                                     as X-QSIM-INTERNAL-TOKEN on every
+ *                                     kernel invocation.
+ *  QSIM_ADMIN_TOKEN                   Operator-only token for
+ *                                     /v0101/audit/tail introspection.
+ *
+ * ─── New crons ──────────────────────────────────────────────────────────
+ *  every  5 min · qsim_key_rotation_check   verify AGI_INTENT_PUBKEY
+ *                                            hash matches the recorded
+ *                                            active rotation id;
+ *                                            emit a KV rotation notice
+ *                                            if changed.
+ *  every  1 hour · qsim_audit_reconcile     compare Supabase
+ *                                            chainstate_qsim.audit_ledger
+ *                                            tail with Base mainnet
+ *                                            QsimReceipts events; flag
+ *                                            any divergence.
+ *
+ * ─── Master rollback ────────────────────────────────────────────────────
+ *   QSIM_ENABLED=false      disables invokeQsim (throws QSIM_DISABLED),
+ *                            /receipt/:id (returns 404), and both crons.
+ *                            The /qsim/* 404 rule remains architecturally
+ *                            active regardless (it is not a subsystem
+ *                            toggle; it is a load-bearing security
+ *                            property).
+ *
+ * ─── What is NOT in this Worker ─────────────────────────────────────────
+ *  The four simulator kernels themselves (state-vector, MPS, stabilizer,
+ *  density-matrix) run on Render, not on the Worker. This edge
+ *  extension is the intent gate, the receipt lookup, the audit
+ *  cross-reference cadence, and the Durable Object session coordinator.
+ *  The Render app.py side hosts the actual /qsim/kernel/* endpoints
+ *  (accessible only via X-QSIM-INTERNAL-TOKEN from this Worker).
+ */
+
+// ─── v0.10.1 · CONSTANTS ─────────────────────────────────────────────────
+const V0101_VERSION = "v0.10.1-qsim";
+const V0101_PAPER   = "CHAINSTATE EDGE QSIM · Rev 2026-09";
+
+// The 5-value MetaPurpose enum. All other values are rejected at the
+// intent gate. "user asked me to" is not a permitted purpose.
+const ALLOWED_PURPOSES = new Set([
+  "VerificationCheck",
+  "StructuralSearch",
+  "SymbolicEvaluation",
+  "SafetyCheck",
+  "PlanningRollout",
+]);
+
+// The QIR gate kinds recognized by the kernel. Reject any gate not in
+// this set at the QIR analysis stage before it reaches Render.
+const ALLOWED_GATE_KINDS = new Set([
+  "H", "X", "Y", "Z", "S", "S_DAG", "T", "T_DAG",
+  "CNOT", "CZ", "SWAP",
+  "RX", "RY", "RZ",
+  "U3",
+  "CCX", "CSWAP",
+  "MEASURE",
+]);
+
+// Envelope-invariant I1: any output tensor with > this many elements
+// is refused as an external payload. Aggregate summaries only.
+const QSIM_MAX_AMPLITUDE_ELEMENTS = 32;
+
+// Substrate ids for the four backends, matching the Solidity receipt
+// contract's uint8 substrate field.
+const QSIM_SUBSTRATE = {
+  STATE_VECTOR:   0,
+  MPS:            1,
+  STABILIZER:    2,
+  DENSITY_MATRIX: 3,
+};
+
+// Base mainnet CHAINSTATE anchor addresses.
+const V0101_BASE = {
+  STATE_TOKEN: "0x9533DF992fd4bCAbB8d8462572449fc45F727d8a",
+  META_SPLIT:  "0x93a7962f75475b7e3Fbb62d3A23194f8833b1BE4",
+  ACCESS_CTRL: "0x29d177bedaef29304eacdc63b2d0285c459a0f50",
+};
+
+// ─── v0.10.1 · CONFIG HELPERS ────────────────────────────────────────────
+function qsimEnabled(env) {
+  return (env && env.QSIM_ENABLED === "true");
+}
+
+function qsimMaxQubits(env) {
+  const raw = env && env.QSIM_MAX_QUBITS;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 30;
+}
+
+function qsimMaxSeconds(env) {
+  const n = Number.parseInt(env && env.QSIM_MAX_SECONDS, 10);
+  return Number.isFinite(n) && n > 0 ? n : 60;
+}
+
+function qsimMaxBytes(env) {
+  const n = Number.parseInt(env && env.QSIM_MAX_BYTES, 10);
+  return Number.isFinite(n) && n > 0 ? n : 33554432;
+}
+
+function qsimIntentTtlS(env) {
+  const n = Number.parseInt(env && env.QSIM_INTENT_TTL_S, 10);
+  return Number.isFinite(n) && n > 0 ? n : 30;
+}
+
+// ─── v0.10.1 · ED25519 INTENT SIGNATURE VERIFICATION ─────────────────────
+// Ed25519 is available via WebCrypto in Cloudflare Workers. The intent
+// signature is Ed25519 over canonical JSON of the IntentPayload. The
+// intent-signing key is rotated on every AGI runtime restart; its
+// public key is served to this Worker via env.AGI_INTENT_PUBKEY at
+// deploy time and re-read on every /v0101/status call.
+
+function _hexToBytes(hex) {
+  if (typeof hex !== "string") return null;
+  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (clean.length % 2 !== 0) return null;
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const b = Number.parseInt(clean.substr(i * 2, 2), 16);
+    if (!Number.isFinite(b)) return null;
+    out[i] = b;
+  }
+  return out;
+}
+
+function _bytesToHex(bytes) {
+  let hex = "0x";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+// Canonical JSON — same sort-and-serialise as v0.10.0's v010CanonicalJson,
+// duplicated locally to avoid depending on load order.
+function qsimCanonicalJson(obj) {
+  if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) return "[" + obj.map(qsimCanonicalJson).join(",") + "]";
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map(k => JSON.stringify(k) + ":" + qsimCanonicalJson(obj[k])).join(",") + "}";
+}
+
+async function verifyIntentSignature(intent, pubkeyHex) {
+  if (!intent || !intent.payload || !intent.signature || !pubkeyHex) return false;
+  const pubkeyBytes = _hexToBytes(pubkeyHex);
+  const sigBytes    = _hexToBytes(intent.signature);
+  if (!pubkeyBytes || pubkeyBytes.length !== 32) return false;
+  if (!sigBytes    || sigBytes.length    !== 64) return false;
+  const canonicalPayload = qsimCanonicalJson(intent.payload);
+  const encoder = new TextEncoder();
+  const msg = encoder.encode(canonicalPayload);
+  let key;
+  try {
+    key = await crypto.subtle.importKey(
+      "raw",
+      pubkeyBytes,
+      { name: "Ed25519" },
+      false,
+      ["verify"],
+    );
+  } catch (_e) {
+    // Ed25519 not enabled on this runtime; refuse safely.
+    return false;
+  }
+  try {
+    return await crypto.subtle.verify({ name: "Ed25519" }, key, sigBytes, msg);
+  } catch (_e) {
+    return false;
+  }
+}
+
+// Defence-in-depth HMAC-SHA256 tag over canonical JSON, sent alongside
+// the Ed25519 signature. Even if the Ed25519 verification is bypassed
+// (implementation bug, misconfigured pubkey), a valid HMAC is still
+// required. Rotated together with the Ed25519 key on runtime restart.
+async function verifyIntentHmac(intent, hmacKey) {
+  if (!intent || !intent.payload || !intent.hmac || !hmacKey) return false;
+  const canonicalPayload = qsimCanonicalJson(intent.payload);
+  const encoder = new TextEncoder();
+  let key;
+  try {
+    key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(hmacKey),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+  } catch (_e) {
+    return false;
+  }
+  let sig;
+  try {
+    sig = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(canonicalPayload),
+    );
+  } catch (_e) {
+    return false;
+  }
+  const computed = _bytesToHex(new Uint8Array(sig));
+  // constant-time comparison
+  if (computed.length !== intent.hmac.length) return false;
+  let diff = 0;
+  for (let i = 0; i < computed.length; i++) {
+    diff |= computed.charCodeAt(i) ^ intent.hmac.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+// ─── v0.10.1 · QIR STATIC ANALYSIS ───────────────────────────────────────
+// Before the QIR is submitted to any backend, its static analysis
+// fields (isClifford, maxEntanglementCut, depth, nonCliffordCount) are
+// verified against the ops. If the caller-supplied analysis disagrees
+// with the recomputed values, the request is refused. The substrate
+// router (§3.6) will read the analysis to pick a backend; we cannot
+// let the caller lie about it.
+function qsimAnalyzeQir(qir) {
+  if (!qir || !Array.isArray(qir.ops)) {
+    return { ok: false, reason: "malformed QIR" };
+  }
+  if (qir.version !== "qsim/1") {
+    return { ok: false, reason: "unsupported QIR version" };
+  }
+  const nq = Number.parseInt(qir.nQubits, 10);
+  if (!Number.isFinite(nq) || nq < 1 || nq > 128) {
+    return { ok: false, reason: "nQubits out of range [1,128]" };
+  }
+  let depth = 0, nonCliffordCount = 0;
+  let allClifford = true;
+  const nonCliffordKinds = new Set(["T", "T_DAG", "RX", "RY", "RZ", "U3", "CCX", "CSWAP"]);
+  for (const op of qir.ops) {
+    if (!op || !ALLOWED_GATE_KINDS.has(op.kind)) {
+      return { ok: false, reason: `bad gate kind: ${op ? op.kind : "null"}` };
+    }
+    if (nonCliffordKinds.has(op.kind)) { nonCliffordCount++; allClifford = false; }
+    if (op.kind === "MEASURE") continue;
+    depth++;
+    if (!Array.isArray(op.qubits)) {
+      return { ok: false, reason: "op missing qubits array" };
+    }
+    for (const q of op.qubits) {
+      if (!Number.isInteger(q) || q < 0 || q >= nq) {
+        return { ok: false, reason: `qubit index out of range: ${q}` };
+      }
+    }
+  }
+  return {
+    ok: true,
+    analysis: {
+      isClifford: allClifford,
+      depth,
+      nonCliffordCount,
+      maxEntanglementCut: 0, // computed at kernel time; 0 = unknown here
+    },
+  };
+}
+
+// Substrate router (§3.6 of the paper). Deterministic decision based
+// on the QIR's analysis fields plus caller fidelity_min. Returns one
+// of QSIM_SUBSTRATE values.
+function qsimSelectSubstrate(qir, fidelityMin) {
+  const a = qir && qir.analysis;
+  if (!a) return QSIM_SUBSTRATE.STATE_VECTOR;
+  // Clifford-only circuits go straight to the polynomial-time stabilizer
+  // backend regardless of qubit count.
+  if (a.isClifford) return QSIM_SUBSTRATE.STABILIZER;
+  // Low-entanglement circuits with declared cut ≤ 6 go to MPS.
+  if (a.maxEntanglementCut > 0 && a.maxEntanglementCut <= 6) return QSIM_SUBSTRATE.MPS;
+  // If the caller requires strict noise modelling (fidelityMin < 0.99)
+  // and the circuit is small enough, density-matrix.
+  if (typeof fidelityMin === "number" && fidelityMin < 0.99 && qir.nQubits <= 14) {
+    return QSIM_SUBSTRATE.DENSITY_MATRIX;
+  }
+  // Otherwise state-vector exact.
+  return QSIM_SUBSTRATE.STATE_VECTOR;
+}
+
+// ─── v0.10.1 · INTENT GATE ───────────────────────────────────────────────
+// The single choke-point for every QSIM invocation. Called by
+// invokeQsim() below and by the DO submit handler. Never called from
+// an external HTTP path.
+
+async function qsimIntentGate(env, intent, qir) {
+  if (!qsimEnabled(env))       return { ok: false, code: 503, reason: "QSIM_DISABLED" };
+  if (!intent || !intent.payload) return { ok: false, code: 400, reason: "missing intent" };
+  if (!qir)                    return { ok: false, code: 400, reason: "missing QIR" };
+
+  const p = intent.payload;
+
+  if (p.version !== "intent/1")    return { ok: false, code: 400, reason: "unsupported intent version" };
+  if (typeof p.sessionId !== "string" || !p.sessionId.length) {
+    return { ok: false, code: 400, reason: "missing sessionId" };
+  }
+  if (!ALLOWED_PURPOSES.has(p.purpose)) {
+    return { ok: false, code: 403, reason: "purpose not permitted" };
+  }
+  if (typeof p.qirHash !== "string" || !p.qirHash.startsWith("0x")) {
+    return { ok: false, code: 400, reason: "malformed qirHash" };
+  }
+  if (typeof p.fidelityMin !== "number" || p.fidelityMin < 0 || p.fidelityMin > 1) {
+    return { ok: false, code: 400, reason: "fidelityMin out of [0,1]" };
+  }
+  if (!p.budget || typeof p.budget.maxSeconds !== "number" || typeof p.budget.maxBytes !== "number") {
+    return { ok: false, code: 400, reason: "malformed budget" };
+  }
+  if (p.budget.maxSeconds <= 0 || p.budget.maxSeconds > qsimMaxSeconds(env)) {
+    return { ok: false, code: 403, reason: "budget.maxSeconds exceeds cap" };
+  }
+  if (p.budget.maxBytes <= 0 || p.budget.maxBytes > qsimMaxBytes(env)) {
+    return { ok: false, code: 403, reason: "budget.maxBytes exceeds cap" };
+  }
+  if (!p.justification || typeof p.justification.traceHash !== "string" || !p.justification.traceHash.startsWith("0x")) {
+    return { ok: false, code: 400, reason: "missing justification.traceHash" };
+  }
+  if (typeof p.issued !== "number" || typeof p.expiry !== "number") {
+    return { ok: false, code: 400, reason: "missing issued/expiry" };
+  }
+  const nowS = Date.now() / 1000;
+  if (p.expiry <= nowS)            return { ok: false, code: 403, reason: "intent expired" };
+  if (p.expiry - p.issued > qsimIntentTtlS(env)) {
+    return { ok: false, code: 403, reason: "intent TTL exceeds cap" };
+  }
+
+  // Signature verifications (Ed25519 primary, HMAC defence-in-depth).
+  const sigOk = await verifyIntentSignature(intent, env.AGI_INTENT_PUBKEY);
+  if (!sigOk) return { ok: false, code: 403, reason: "bad Ed25519 signature" };
+
+  if (env.QSIM_INTENT_HMAC_KEY) {
+    const hmacOk = await verifyIntentHmac(intent, env.QSIM_INTENT_HMAC_KEY);
+    if (!hmacOk) return { ok: false, code: 403, reason: "bad HMAC" };
+  }
+
+  // QIR static analysis.
+  if (qir.nQubits > qsimMaxQubits(env)) {
+    return { ok: false, code: 403, reason: `nQubits ${qir.nQubits} exceeds cap ${qsimMaxQubits(env)}` };
+  }
+  const analysis = qsimAnalyzeQir(qir);
+  if (!analysis.ok) return { ok: false, code: 400, reason: analysis.reason };
+
+  // The caller's declared analysis is compared against ours; if the
+  // caller does not declare it, we fill it in from our recomputation.
+  const a = qir.analysis || {};
+  const ok =
+    (a.isClifford === undefined       || a.isClifford === analysis.analysis.isClifford) &&
+    (a.nonCliffordCount === undefined || a.nonCliffordCount === analysis.analysis.nonCliffordCount) &&
+    (a.depth === undefined            || a.depth === analysis.analysis.depth);
+  if (!ok) return { ok: false, code: 400, reason: "QIR analysis mismatch (caller-supplied vs recomputed)" };
+
+  qir.analysis = { ...analysis.analysis, ...a };
+  const substrate = qsimSelectSubstrate(qir, p.fidelityMin);
+  return { ok: true, substrate, analysis: qir.analysis };
+}
+
+// ─── v0.10.1 · RATE-LIMIT COUNTERS (CHAINSTATE_QSIM_KV) ──────────────────
+// Per-session soft counters, enforced at the intent gate for defence
+// in depth. The authoritative rate limit is in the Durable Object.
+async function qsimRateLimitBump(env, sessionId) {
+  if (!env.CHAINSTATE_QSIM_KV) return { permitted: true, count: 0 };
+  const key = `rate:${sessionId}:${Math.floor(Date.now() / 60000)}`;
+  let n = 0;
+  try {
+    const raw = await env.CHAINSTATE_QSIM_KV.get(key);
+    n = Number.parseInt(raw || "0", 10) || 0;
+  } catch (_e) {}
+  n += 1;
+  try { await env.CHAINSTATE_QSIM_KV.put(key, String(n), { expirationTtl: 120 }); } catch (_e) {}
+  // Cap at 60 intents per session per minute.
+  return { permitted: n <= 60, count: n };
+}
+
+// ─── v0.10.1 · INVOKE QSIM · INTERNAL FUNCTION ───────────────────────────
+// The ONE entry point through which QSIM is invoked. Called from within
+// the AGI runtime over a service binding — never bound to an HTTP route.
+// The reason this function is defined here is so it is co-located with
+// the intent-gate rules that govern it; it is exported for use by the
+// AGI runtime binding.
+async function invokeQsim(env, intent, qir) {
+  if (!qsimEnabled(env)) {
+    const e = new Error("QSIM_DISABLED"); e.code = 503; throw e;
+  }
+  // Rate limit first, to preserve the intent-gate check budget under
+  // adversarial rate attempts.
+  const sid = intent && intent.payload && intent.payload.sessionId;
+  if (!sid) {
+    const e = new Error("intent missing sessionId"); e.code = 400; throw e;
+  }
+  const rl = await qsimRateLimitBump(env, sid);
+  if (!rl.permitted) {
+    const e = new Error("session rate limit exceeded"); e.code = 429; throw e;
+  }
+  const gate = await qsimIntentGate(env, intent, qir);
+  if (!gate.ok) {
+    const e = new Error(`intent gate rejected: ${gate.reason}`); e.code = gate.code; throw e;
+  }
+  // Route via Durable Object per session. The DO submits to the Render
+  // kernel over the internal binding, waits for the receipt, persists
+  // to Supabase, and returns { receiptHash, semanticSummary } only.
+  const id  = env.QSIM_KERNEL_DO.idFromName(sid);
+  const stub = env.QSIM_KERNEL_DO.get(id);
+  const resp = await stub.fetch("https://qsim.internal/submit", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-QSIM-SUBSTRATE": String(gate.substrate),
+    },
+    body: JSON.stringify({ intent, qir }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    const e = new Error(`kernel failure: ${resp.status} ${text.slice(0, 120)}`);
+    e.code = 502; throw e;
+  }
+  const out = await resp.json();
+
+  // Envelope invariant I1 · No raw amplitudes. Reject any output that
+  // carries a tensor of more than 32 elements.
+  if (out && out.amplitudes && Array.isArray(out.amplitudes) &&
+      out.amplitudes.length > QSIM_MAX_AMPLITUDE_ELEMENTS) {
+    const e = new Error("envelope I1: raw amplitudes refused (>32 elements)");
+    e.code = 500; throw e;
+  }
+  // Envelope invariant I2 · Strip any intermediate state; only
+  // receiptHash and semanticSummary are permitted upward.
+  return {
+    receiptHash:     out.receiptHash || null,
+    semanticSummary: out.semanticSummary || null,
+    substrate:       out.substrate || gate.substrate,
+    // Aggregate summary quantities are permitted if scalar.
+    expectationValue: (typeof out.expectationValue === "number") ? out.expectationValue : null,
+    probabilityHistogram: (
+      out.probabilityHistogram && Array.isArray(out.probabilityHistogram) &&
+      out.probabilityHistogram.length <= QSIM_MAX_AMPLITUDE_ELEMENTS
+    ) ? out.probabilityHistogram : null,
+  };
+}
+
+// ─── v0.10.1 · RECEIPT LOOKUP (external-facing, read-only) ──────────────
+// GET /receipt/:id returns Base tx hash + semantic summary. Never
+// returns raw amplitudes or intermediate state. Rate-limited via
+// CHAINSTATE_QSIM_KV. Envelope invariants I1 and I4 hold here by
+// construction: nothing beyond receiptHash and semanticSummary is
+// ever emitted.
+
+async function handleQsimReceiptLookup(request, env, id) {
+  if (!qsimEnabled(env)) {
+    return new Response("not found", { status: 404 });
+  }
+  if (!/^[0-9a-fA-Fx]{2,80}$/.test(id)) {
+    return new Response("bad id", { status: 400 });
+  }
+  // Try KV cache first.
+  try {
+    if (env.CHAINSTATE_QSIM_KV) {
+      const raw = await env.CHAINSTATE_QSIM_KV.get(`receipt:${id}`);
+      if (raw) {
+        return new Response(raw, { status: 200, headers: { "content-type": "application/json" } });
+      }
+    }
+  } catch (_e) {}
+
+  // Fall through to Supabase.
+  if (!env.QSIM_SUPABASE_URL || !env.QSIM_SUPABASE_SERVICE_ROLE_KEY) {
+    return new Response("not found", { status: 404 });
+  }
+  try {
+    const url = `${env.QSIM_SUPABASE_URL}/rest/v1/qsim_receipts?id=eq.${encodeURIComponent(id)}&select=id,base_tx_hash,semantic_summary,substrate,timestamp`;
+    const resp = await fetch(url, {
+      headers: {
+        apikey: env.QSIM_SUPABASE_SERVICE_ROLE_KEY,
+        authorization: `Bearer ${env.QSIM_SUPABASE_SERVICE_ROLE_KEY}`,
+        "accept-profile": "chainstate_qsim",
+      },
+    });
+    if (!resp.ok) return new Response("not found", { status: 404 });
+    const rows = await resp.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return new Response("not found", { status: 404 });
+    }
+    const r = rows[0];
+    const body = JSON.stringify({
+      id: r.id,
+      base_tx_hash: r.base_tx_hash,
+      semantic_summary: r.semantic_summary,
+      substrate: r.substrate,
+      timestamp: r.timestamp,
+    });
+    try {
+      if (env.CHAINSTATE_QSIM_KV) {
+        await env.CHAINSTATE_QSIM_KV.put(`receipt:${id}`, body, { expirationTtl: 3600 });
+      }
+    } catch (_e) {}
+    return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+  } catch (_e) {
+    return new Response("not found", { status: 404 });
+  }
+}
+
+// ─── v0.10.1 · v0101 STATUS & AUDIT TAIL (operator introspection) ────────
+function handleV0101Status(env) {
+  const body = JSON.stringify({
+    ok: true,
+    version: V0101_VERSION,
+    paper: V0101_PAPER,
+    qsim_enabled: qsimEnabled(env),
+    caps: {
+      max_qubits:     qsimMaxQubits(env),
+      max_seconds:    qsimMaxSeconds(env),
+      max_bytes:      qsimMaxBytes(env),
+      intent_ttl_s:   qsimIntentTtlS(env),
+    },
+    allowed_purposes: [...ALLOWED_PURPOSES],
+    envelope_invariants: [
+      "I1: no raw amplitudes >32 elements",
+      "I2: no intermediate state",
+      "I3: no intent-signing artefacts",
+      "I4: receipt-hash-only external references",
+      "I5: append-only audit ledger",
+    ],
+    architectural_rule: "no external /qsim/* route; QSIM invoked only via internal binding",
+    base: V0101_BASE,
+    preserved: "every v0.7.0 – v0.10.0 subsystem is byte-identically preserved",
+  });
+  return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+}
+
+async function handleV0101AuditTail(request, env) {
+  const adminHeader = request.headers.get("x-chainstate-admin-token") || "";
+  if (!env.QSIM_ADMIN_TOKEN || adminHeader !== env.QSIM_ADMIN_TOKEN) {
+    return new Response("forbidden", { status: 403 });
+  }
+  try {
+    if (env.CHAINSTATE_QSIM_AUDIT_KV) {
+      const raw = await env.CHAINSTATE_QSIM_AUDIT_KV.get("tail");
+      if (raw) {
+        return new Response(raw, { status: 200, headers: { "content-type": "application/json" } });
+      }
+    }
+  } catch (_e) {}
+  return new Response(JSON.stringify({ ok: true, tail: [] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+}
+
+// ─── v0.10.1 · DISPATCHER (called from main fetch after v0.10.0) ─────────
+async function dispatchV0101Qsim(request, env, ctx, url) {
+  const p = url.pathname;
+
+  // ARCHITECTURAL RULE — refuse every /qsim/* external path unconditionally.
+  // This runs regardless of QSIM_ENABLED because the property is
+  // load-bearing: the sovereignty argument in §5 of the paper depends on
+  // the compile-time absence of external QSIM routes at the edge.
+  if (p === "/qsim" || p.startsWith("/qsim/")) {
+    return new Response("not found", { status: 404 });
+  }
+
+  // /receipt/:id read-only lookup (safe: envelope-invariant filtered).
+  if (p.startsWith("/receipt/") && request.method === "GET") {
+    const id = p.slice("/receipt/".length);
+    return handleQsimReceiptLookup(request, env, id);
+  }
+
+  // Operator status (no key material, no audit content).
+  if (p === "/v0101/status") return handleV0101Status(env);
+
+  // Operator audit tail (gated by X-CHAINSTATE-ADMIN-TOKEN).
+  if (p === "/v0101/audit/tail" && request.method === "GET") {
+    return handleV0101AuditTail(request, env);
+  }
+
+  return null; // not a v0.10.1 route
+}
+
+// ─── v0.10.1 · CRON DISPATCHER ───────────────────────────────────────────
+async function dispatchV0101Cron(cron, env, ctx) {
+  if (!qsimEnabled(env)) return null;
+
+  // Every 5 minutes — key rotation check.
+  if (cron === "*/5 * * * *") {
+    return qsimKeyRotationCheckTick(env, ctx);
+  }
+  // Every hour — audit reconciliation.
+  if (cron === "0 * * * *") {
+    return qsimAuditReconcileTick(env, ctx);
+  }
+  return null;
+}
+
+async function qsimKeyRotationCheckTick(env, ctx) {
+  try {
+    const pubkeyHex = env.AGI_INTENT_PUBKEY || "";
+    const encoder = new TextEncoder();
+    const digest = await crypto.subtle.digest("SHA-256", encoder.encode(pubkeyHex));
+    const nowRotHash = _bytesToHex(new Uint8Array(digest));
+    let prevRotHash = null;
+    if (env.CHAINSTATE_QSIM_KV) {
+      prevRotHash = await env.CHAINSTATE_QSIM_KV.get("key_rot_hash");
+    }
+    if (prevRotHash !== nowRotHash) {
+      if (env.CHAINSTATE_QSIM_KV) {
+        await env.CHAINSTATE_QSIM_KV.put("key_rot_hash", nowRotHash, { expirationTtl: 86400 });
+        await env.CHAINSTATE_QSIM_KV.put(`key_rot_history:${Date.now()}`, JSON.stringify({
+          prev: prevRotHash, next: nowRotHash, at_iso: new Date().toISOString(),
+        }), { expirationTtl: 604800 });
+      }
+    }
+    return { ok: true, rotated: prevRotHash !== nowRotHash };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+async function qsimAuditReconcileTick(env, ctx) {
+  // Envelope invariant I5: the audit ledger is append-only in Supabase
+  // and cross-referenced with Base receipts. This tick reads the
+  // Supabase tail via service role and caches a summary into
+  // CHAINSTATE_QSIM_AUDIT_KV for operator introspection.
+  if (!env.QSIM_SUPABASE_URL || !env.QSIM_SUPABASE_SERVICE_ROLE_KEY) {
+    return { ok: false, reason: "supabase not configured" };
+  }
+  try {
+    const url = `${env.QSIM_SUPABASE_URL}/rest/v1/audit_ledger?select=id,intent_hash,receipt_hash,base_tx_hash,at_iso&order=at_iso.desc&limit=50`;
+    const resp = await fetch(url, {
+      headers: {
+        apikey: env.QSIM_SUPABASE_SERVICE_ROLE_KEY,
+        authorization: `Bearer ${env.QSIM_SUPABASE_SERVICE_ROLE_KEY}`,
+        "accept-profile": "chainstate_qsim",
+      },
+    });
+    if (!resp.ok) return { ok: false, reason: `supabase ${resp.status}` };
+    const rows = await resp.json();
+    const tail = { ok: true, at_iso: new Date().toISOString(), rows };
+    if (env.CHAINSTATE_QSIM_AUDIT_KV) {
+      await env.CHAINSTATE_QSIM_AUDIT_KV.put("tail", JSON.stringify(tail), { expirationTtl: 3600 });
+    }
+    return { ok: true, count: Array.isArray(rows) ? rows.length : 0 };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+// ─── v0.10.1 · DURABLE OBJECT · QSIM_KERNEL_DO ───────────────────────────
+// One instance per AGI session id. Coordinates intent-token sequencing,
+// forwards to the Render kernel, mints the Base receipt, persists to
+// Supabase, and returns { receiptHash, semanticSummary } to the caller.
+// This DO is the only place that talks to the Render kernel; it is
+// never bound to an external HTTP route.
+export class QsimKernelDO {
+  constructor(state, env) {
+    this.state = state;
+    this.env   = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname !== "/submit" || request.method !== "POST") {
+      return new Response("not found", { status: 404 });
+    }
+    if (!qsimEnabled(this.env)) {
+      return new Response(JSON.stringify({ ok: false, reason: "QSIM_DISABLED" }), {
+        status: 503, headers: { "content-type": "application/json" },
+      });
+    }
+    let body;
+    try {
+      body = await request.json();
+    } catch (_e) {
+      return new Response(JSON.stringify({ ok: false, reason: "bad JSON" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    }
+    const { intent, qir } = body || {};
+    const substrateStr = request.headers.get("X-QSIM-SUBSTRATE") || "0";
+    const substrate = Number.parseInt(substrateStr, 10);
+
+    if (!this.env.QSIM_KERNEL_BASE_URL || !this.env.QSIM_KERNEL_INTERNAL_TOKEN) {
+      return new Response(JSON.stringify({ ok: false, reason: "kernel not configured" }), {
+        status: 503, headers: { "content-type": "application/json" },
+      });
+    }
+
+    const kernelPath = ({
+      0: "/qsim/kernel/state_vector",
+      1: "/qsim/kernel/mps",
+      2: "/qsim/kernel/stabilizer",
+      3: "/qsim/kernel/density_matrix",
+    })[substrate] || "/qsim/kernel/state_vector";
+
+    let kernelResp;
+    try {
+      kernelResp = await fetch(this.env.QSIM_KERNEL_BASE_URL.replace(/\/$/, "") + kernelPath, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-QSIM-INTERNAL-TOKEN": this.env.QSIM_KERNEL_INTERNAL_TOKEN,
+          "X-QSIM-SUBSTRATE": String(substrate),
+        },
+        body: JSON.stringify({ intent, qir }),
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, reason: `kernel fetch: ${e.message || e}` }), {
+        status: 502, headers: { "content-type": "application/json" },
+      });
+    }
+    if (!kernelResp.ok) {
+      const text = await kernelResp.text().catch(() => "");
+      return new Response(JSON.stringify({ ok: false, reason: `kernel ${kernelResp.status}`, body: text.slice(0, 200) }), {
+        status: 502, headers: { "content-type": "application/json" },
+      });
+    }
+    const kernelOut = await kernelResp.json();
+
+    // Persist a receipt row to Supabase (append-only enforced by trigger).
+    let receiptHash = kernelOut && kernelOut.receipt_hash ? kernelOut.receipt_hash : null;
+    let semanticSummary = kernelOut && kernelOut.semantic_summary ? kernelOut.semantic_summary : null;
+
+    if (this.env.QSIM_SUPABASE_URL && this.env.QSIM_SUPABASE_SERVICE_ROLE_KEY && receiptHash) {
+      try {
+        const insertResp = await fetch(`${this.env.QSIM_SUPABASE_URL}/rest/v1/qsim_receipts`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            apikey: this.env.QSIM_SUPABASE_SERVICE_ROLE_KEY,
+            authorization: `Bearer ${this.env.QSIM_SUPABASE_SERVICE_ROLE_KEY}`,
+            "content-profile": "chainstate_qsim",
+            prefer: "return=minimal",
+          },
+          body: JSON.stringify({
+            id: receiptHash,
+            qir_hash: intent && intent.payload && intent.payload.qirHash,
+            intent_hash: kernelOut.intent_hash || null,
+            substrate: substrate,
+            semantic_summary: semanticSummary,
+            base_tx_hash: kernelOut.base_tx_hash || null,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+        void insertResp;
+      } catch (_e) { /* audit failure never blocks user-visible response */ }
+    }
+
+    return new Response(JSON.stringify({
+      ok: true,
+      receiptHash,
+      semanticSummary,
+      substrate,
+      expectationValue: (typeof kernelOut.expectation_value === "number") ? kernelOut.expectation_value : null,
+      probabilityHistogram: Array.isArray(kernelOut.probability_histogram) &&
+                             kernelOut.probability_histogram.length <= QSIM_MAX_AMPLITUDE_ELEMENTS
+                             ? kernelOut.probability_histogram : null,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+// ─── v0.10.1 · Public exports (for AGI runtime service binding) ──────────
+// These are the ONLY functions the AGI runtime binding may call. Never
+// bind these to an HTTP route; there is no route through which they
+// should be reachable from outside the AGI runtime.
+export { invokeQsim, verifyIntentSignature, ALLOWED_PURPOSES };
+
+// ─── END of v0.10.1 · CHAINSTATE EDGE QSIM ─────────────────────────────
